@@ -1,0 +1,738 @@
+{
+  "info": {
+    "name": "SalaahManager API v2 - With Permissions",
+    "description": "Complete API collection with Super Admin & Granular Permissions System",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{access_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:5000/api/v1",
+      "type": "string"
+    },
+    {
+      "key": "access_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "refresh_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "user_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "masjid_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "second_user_id",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "🔐 1. Authentication",
+      "item": [
+        {
+          "name": "1.1 Register New User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('access_token', response.data.accessToken);",
+                  "    pm.collectionVariables.set('refresh_token', response.data.refreshToken);",
+                  "    pm.collectionVariables.set('user_id', response.data.user.id);",
+                  "    console.log('✅ User registered');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"John Doe\",\n  \"email\": \"john.doe@example.com\",\n  \"password\": \"Password123\",\n  \"phone\": \"+1234567890\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/register",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "register"]
+            },
+            "description": "Register a new user. By default, users are NOT super admins."
+          }
+        },
+        {
+          "name": "1.2 Login as Super Admin",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('access_token', response.data.accessToken);",
+                  "    pm.collectionVariables.set('refresh_token', response.data.refreshToken);",
+                  "    pm.collectionVariables.set('user_id', response.data.user.id);",
+                  "    console.log('✅ Super Admin logged in');",
+                  "    console.log('User:', response.data.user.name);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@example.com\",\n  \"password\": \"Password123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "login"]
+            },
+            "description": "Login as super admin (after running SQL: UPDATE users SET is_super_admin = true WHERE email = 'admin@example.com')"
+          }
+        },
+        {
+          "name": "1.3 Login as Regular User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('access_token', response.data.accessToken);",
+                  "    pm.collectionVariables.set('user_id', response.data.user.id);",
+                  "    console.log('✅ Regular user logged in');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"imam@example.com\",\n  \"password\": \"Password123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "login"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "👤 2. Users & Profile",
+      "item": [
+        {
+          "name": "2.1 Get My Profile",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/users/profile",
+              "host": ["{{base_url}}"],
+              "path": ["users", "profile"]
+            },
+            "description": "Get logged-in user's profile. Check is_super_admin field in response."
+          }
+        },
+        {
+          "name": "2.2 Get My Masajids (with Permissions)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.data.length > 0) {",
+                  "        pm.collectionVariables.set('masjid_id', response.data[0].masjidId);",
+                  "        console.log('✅ Masjid ID saved:', response.data[0].masjidId);",
+                  "        console.log('Roles:', response.data[0].roles);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/users/masajids",
+              "host": ["{{base_url}}"],
+              "path": ["users", "masajids"]
+            },
+            "description": "Get all masajids user belongs to with their roles and permissions"
+          }
+        }
+      ]
+    },
+    {
+      "name": "🕌 3. Masajids",
+      "item": [
+        {
+          "name": "3.1 Create Masjid",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('masjid_id', response.data.id);",
+                  "    console.log('✅ Masjid created with ID:', response.data.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Masjid Al-Test\",\n  \"location\": \"Test Location\",\n  \"address\": \"123 Test Street\",\n  \"city\": \"Test City\",\n  \"state\": \"TS\",\n  \"country\": \"Test Country\",\n  \"postal_code\": \"12345\",\n  \"contact_email\": \"contact@test.com\",\n  \"contact_phone\": \"+1234567890\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/masajids",
+              "host": ["{{base_url}}"],
+              "path": ["masajids"]
+            },
+            "description": "Create masjid. Creator automatically becomes admin with ALL permissions."
+          }
+        },
+        {
+          "name": "3.2 Get Masjid Members (Shows Permissions)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/masajids/{{masjid_id}}/members",
+              "host": ["{{base_url}}"],
+              "path": ["masajids", "{{masjid_id}}", "members"]
+            },
+            "description": "Get all members with their permissions for this masjid"
+          }
+        }
+      ]
+    },
+    {
+      "name": "👥 4. User Management (With Permissions)",
+      "item": [
+        {
+          "name": "4.1 Add User with Custom Permissions",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{second_user_id}}\",\n  \"role\": \"imam\",\n  \"permissions\": {\n    \"can_view_complaints\": false,\n    \"can_answer_complaints\": false,\n    \"can_view_questions\": true,\n    \"can_answer_questions\": true,\n    \"can_change_prayer_times\": true,\n    \"can_create_events\": false,\n    \"can_create_notifications\": false\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/masajids/{{masjid_id}}/users",
+              "host": ["{{base_url}}"],
+              "path": ["masajids", "{{masjid_id}}", "users"]
+            },
+            "description": "Add user with specific permissions. Permissions object is OPTIONAL - if not provided, defaults based on role."
+          }
+        },
+        {
+          "name": "4.2 Add User with Default Permissions",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{second_user_id}}\",\n  \"role\": \"admin\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/masajids/{{masjid_id}}/users",
+              "host": ["{{base_url}}"],
+              "path": ["masajids", "{{masjid_id}}", "users"]
+            },
+            "description": "Add user without specifying permissions. Will use role defaults:\n- Admin: All permissions true\n- Imam: Most permissions true except complaints"
+          }
+        },
+        {
+          "name": "4.3 Add Limited User (View Only)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{second_user_id}}\",\n  \"role\": \"imam\",\n  \"permissions\": {\n    \"can_view_complaints\": false,\n    \"can_answer_complaints\": false,\n    \"can_view_questions\": true,\n    \"can_answer_questions\": false,\n    \"can_change_prayer_times\": false,\n    \"can_create_events\": false,\n    \"can_create_notifications\": false\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/masajids/{{masjid_id}}/users",
+              "host": ["{{base_url}}"],
+              "path": ["masajids", "{{masjid_id}}", "users"]
+            },
+            "description": "Example: Add user who can only VIEW questions but cannot answer"
+          }
+        },
+        {
+          "name": "4.4 Add Power User (All Permissions)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{second_user_id}}\",\n  \"role\": \"admin\",\n  \"permissions\": {\n    \"can_view_complaints\": true,\n    \"can_answer_complaints\": true,\n    \"can_view_questions\": true,\n    \"can_answer_questions\": true,\n    \"can_change_prayer_times\": true,\n    \"can_create_events\": true,\n    \"can_create_notifications\": true\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/masajids/{{masjid_id}}/users",
+              "host": ["{{base_url}}"],
+              "path": ["masajids", "{{masjid_id}}", "users"]
+            },
+            "description": "Add user with ALL permissions enabled"
+          }
+        }
+      ]
+    },
+    {
+      "name": "🕌 5. Prayer Times (Permission: can_change_prayer_times)",
+      "item": [
+        {
+          "name": "5.1 Get Today's Prayer Times (Public)",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/prayer-times/masjid/{{masjid_id}}/today",
+              "host": ["{{base_url}}"],
+              "path": ["prayer-times", "masjid", "{{masjid_id}}", "today"]
+            },
+            "description": "Public endpoint - no authentication required"
+          }
+        },
+        {
+          "name": "5.2 Bulk Update Prayer Times",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"masjidId\": \"{{masjid_id}}\",\n  \"effectiveDate\": \"2025-01-30\",\n  \"prayerTimes\": [\n    { \"prayerName\": \"Fajr\", \"prayerTime\": \"05:30\" },\n    { \"prayerName\": \"Dhuhr\", \"prayerTime\": \"12:30\" },\n    { \"prayerName\": \"Asr\", \"prayerTime\": \"15:45\" },\n    { \"prayerName\": \"Maghrib\", \"prayerTime\": \"18:15\" },\n    { \"prayerName\": \"Isha\", \"prayerTime\": \"19:30\" }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/prayer-times/bulk",
+              "host": ["{{base_url}}"],
+              "path": ["prayer-times", "bulk"]
+            },
+            "description": "⚠️ Requires can_change_prayer_times permission"
+          }
+        }
+      ]
+    },
+    {
+      "name": "❓ 6. Questions (Permissions: view/answer)",
+      "item": [
+        {
+          "name": "6.1 Submit Question (Public)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('question_id', response.data.id);",
+                  "    console.log('✅ Question submitted');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"masjidId\": \"{{masjid_id}}\",\n  \"userName\": \"Test User\",\n  \"userEmail\": \"testuser@example.com\",\n  \"title\": \"Question about Prayer Times\",\n  \"question\": \"What time does Jummah prayer start on Fridays?\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/questions",
+              "host": ["{{base_url}}"],
+              "path": ["questions"]
+            },
+            "description": "Public endpoint - anyone can submit questions"
+          }
+        },
+        {
+          "name": "6.2 Get All Questions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/questions/masjid/{{masjid_id}}?status=new",
+              "host": ["{{base_url}}"],
+              "path": ["questions", "masjid", "{{masjid_id}}"],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "new"
+                }
+              ]
+            },
+            "description": "⚠️ Requires can_view_questions permission"
+          }
+        },
+        {
+          "name": "6.3 Reply to Question",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reply\": \"Jummah prayer starts at 1:00 PM every Friday.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/questions/{{question_id}}/reply",
+              "host": ["{{base_url}}"],
+              "path": ["questions", "{{question_id}}", "reply"]
+            },
+            "description": "⚠️ Requires can_answer_questions permission"
+          }
+        }
+      ]
+    },
+    {
+      "name": "📅 7. Events (Permission: can_create_events)",
+      "item": [
+        {
+          "name": "7.1 Create Event",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('event_id', response.data.id);",
+                  "    console.log('✅ Event created');",
+                  "    console.log('Creator:', response.data.creator.name);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"masjidId\": \"{{masjid_id}}\",\n  \"name\": \"Islamic Study Circle\",\n  \"description\": \"Weekly study circle covering Quran and Hadith\",\n  \"eventDate\": \"2025-02-15\",\n  \"eventTime\": \"19:00\",\n  \"location\": \"Main Prayer Hall\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/events",
+              "host": ["{{base_url}}"],
+              "path": ["events"]
+            },
+            "description": "⚠️ Requires can_create_events permission\n✅ Response now includes creator info!"
+          }
+        },
+        {
+          "name": "7.2 Get Upcoming Events",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/events/masjid/{{masjid_id}}/upcoming",
+              "host": ["{{base_url}}"],
+              "path": ["events", "masjid", "{{masjid_id}}", "upcoming"]
+            },
+            "description": "Get upcoming events with creator info"
+          }
+        },
+        {
+          "name": "7.3 Update Event",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Islamic Study Circle - Updated\",\n  \"eventTime\": \"20:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/events/{{event_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["events", "{{event_id}}"]
+            },
+            "description": "⚠️ Requires can_create_events permission\n✅ Response includes creator info!"
+          }
+        }
+      ]
+    },
+    {
+      "name": "📢 8. Notifications (Permission: can_create_notifications)",
+      "item": [
+        {
+          "name": "8.1 Create Notification",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('notification_id', response.data.id);",
+                  "    console.log('✅ Notification created');",
+                  "    console.log('Creator:', response.data.creator.name);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"masjidId\": \"{{masjid_id}}\",\n  \"title\": \"Ramadan Prayer Times Updated\",\n  \"description\": \"Prayer times have been updated for Ramadan\",\n  \"category\": \"Prayer Times\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/notifications",
+              "host": ["{{base_url}}"],
+              "path": ["notifications"]
+            },
+            "description": "⚠️ Requires can_create_notifications permission\n✅ Response includes creator info!"
+          }
+        },
+        {
+          "name": "8.2 Get Recent Notifications",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/notifications/masjid/{{masjid_id}}/recent",
+              "host": ["{{base_url}}"],
+              "path": ["notifications", "masjid", "{{masjid_id}}", "recent"]
+            },
+            "description": "Get recent notifications with creator info"
+          }
+        },
+        {
+          "name": "8.3 Update Notification",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Ramadan Prayer Times - Final Update\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/notifications/{{notification_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["notifications", "{{notification_id}}"]
+            },
+            "description": "⚠️ Requires can_create_notifications permission\n✅ Response includes creator info!"
+          }
+        }
+      ]
+    },
+    {
+      "name": "🧪 9. Permission Testing",
+      "item": [
+        {
+          "name": "Test - Create Event Without Permission",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"masjidId\": \"{{masjid_id}}\",\n  \"name\": \"Test Event\",\n  \"description\": \"This should fail if user doesn't have permission\",\n  \"eventDate\": \"2025-03-01\",\n  \"eventTime\": \"18:00\",\n  \"location\": \"Test Location\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/events",
+              "host": ["{{base_url}}"],
+              "path": ["events"]
+            },
+            "description": "Expected: 403 Forbidden if user doesn't have can_create_events permission"
+          }
+        },
+        {
+          "name": "Test - Answer Question Without Permission",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reply\": \"Test reply - should fail without permission\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/questions/{{question_id}}/reply",
+              "host": ["{{base_url}}"],
+              "path": ["questions", "{{question_id}}", "reply"]
+            },
+            "description": "Expected: 403 Forbidden if user doesn't have can_answer_questions permission"
+          }
+        },
+        {
+          "name": "Test - Super Admin Access Any Masjid",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/masajids/{{masjid_id}}/members",
+              "host": ["{{base_url}}"],
+              "path": ["masajids", "{{masjid_id}}", "members"]
+            },
+            "description": "Super admin should have access even if not a member"
+          }
+        }
+      ]
+    },
+    {
+      "name": "🔍 10. Health Check",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": ["{{base_url}}"],
+              "path": ["health"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
+
