@@ -41,25 +41,28 @@ module.exports = {
     logging: false
   },
   production: {
-    username: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
-    host: process.env.DB_HOST,
-    port: process.env.DB_PORT || 3306,
+    username: process.env.DB_USER || process.env.DATABASE_USER,
+    password: process.env.DB_PASSWORD || process.env.DATABASE_PASSWORD,
+    database: process.env.DB_NAME || process.env.DATABASE_NAME,
+    host: process.env.DB_HOST || process.env.DATABASE_HOST,
+    port: process.env.DB_PORT || process.env.DATABASE_PORT || 3306,
     dialect: 'mysql',
     logging: false,
     pool: {
-      max: 30,           // Higher for production
-      min: 5,            // Keep more connections ready
-      acquire: 60000,    // 60 second timeout
-      idle: 10000,
+      max: 10,           // Reduced for serverless (Vercel)
+      min: 0,            // Don't keep connections (serverless)
+      acquire: 30000,    // 30 second timeout
+      idle: 10000,       // Close idle connections quickly
       evict: 1000,
       handleDisconnects: true
     },
     dialectOptions: {
-      connectTimeout: 60000,
+      connectTimeout: 30000,  // 30 second connection timeout
       supportBigNumbers: true,
-      bigNumberStrings: true
+      bigNumberStrings: true,
+      ssl: process.env.DB_SSL === 'true' ? {
+        rejectUnauthorized: false
+      } : false
     },
     define: {
       timestamps: true,
