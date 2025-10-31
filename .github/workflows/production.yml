@@ -100,7 +100,7 @@ jobs:
     steps:
       - name: Deployment success notification
         run: |
-          echo "✅ Production build completed successfully!!"
+          echo "✅ Production build completed successfully!"
           echo "🔗 Deployment URL: https://alasrbackend.vercel.app"
           echo "📊 View deployment: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
