@@ -1,5 +1,7 @@
 {
   "version": 2,
+  "buildCommand": "npm install",
+  "installCommand": "npm install",
   "routes": [
     {
       "src": "/(.*)",
@@ -12,7 +14,12 @@
   "functions": {
     "api/index.js": {
       "maxDuration": 30,
-      "memory": 1024
+      "memory": 1024,
+      "includeFiles": [
+        "node_modules/mysql2/**",
+        "package.json",
+        "package-lock.json"
+      ]
     }
   }
 }
