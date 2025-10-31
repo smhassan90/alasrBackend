@@ -14,12 +14,7 @@
   "functions": {
     "api/index.js": {
       "maxDuration": 30,
-      "memory": 1024,
-      "includeFiles": [
-        "node_modules/mysql2/**",
-        "package.json",
-        "package-lock.json"
-      ]
+      "memory": 1024
     }
   }
 }
