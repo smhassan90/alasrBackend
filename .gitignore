@@ -1,6 +1,6 @@
 # Dependencies
 node_modules/
-package-lock.json
+# package-lock.json - REMOVED: Vercel needs this to install dependencies correctly
 yarn.lock
 
 # Environment variables
