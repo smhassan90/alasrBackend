@@ -41,13 +41,15 @@ module.exports = {
     logging: false
   },
   production: {
-    username: process.env.DB_USER || process.env.DATABASE_USER,
-    password: process.env.DB_PASSWORD || process.env.DATABASE_PASSWORD,
-    database: process.env.DB_NAME || process.env.DATABASE_NAME,
-    host: process.env.DB_HOST || process.env.DATABASE_HOST,
-    port: process.env.DB_PORT || process.env.DATABASE_PORT || 3306,
+    username: process.env.DB_USER || process.env.DATABASE_USER || 'root',
+    password: process.env.DB_PASSWORD || process.env.DATABASE_PASSWORD || '',
+    database: process.env.DB_NAME || process.env.DATABASE_NAME || 'salaahmanager',
+    host: process.env.DB_HOST || process.env.DATABASE_HOST || 'localhost',
+    port: parseInt(process.env.DB_PORT || process.env.DATABASE_PORT || '3306', 10),
     dialect: 'mysql',
     logging: false,
+    // Don't connect on initialization - lazy connect for serverless
+    // Set pool to avoid immediate connection
     pool: {
       max: 10,           // Reduced for serverless (Vercel)
       min: 0,            // Don't keep connections (serverless)
@@ -70,6 +72,11 @@ module.exports = {
       underscoredAll: true,
       createdAt: 'created_at',
       updatedAt: 'updated_at'
+    },
+    // Don't connect automatically - connect on first query
+    // This prevents connection attempts on module load (serverless)
+    retry: {
+      max: 3
     }
   }
 };

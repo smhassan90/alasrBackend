@@ -4,7 +4,12 @@ const config = require('../config/database');
 const env = process.env.NODE_ENV || 'development';
 const dbConfig = config[env];
 
-// Initialize Sequelize
+// Validate config before initializing
+if (!dbConfig) {
+  throw new Error(`Database config not found for environment: ${env}`);
+}
+
+// Initialize Sequelize (doesn't connect immediately - lazy connection)
 const sequelize = new Sequelize(
   dbConfig.database,
   dbConfig.username,
@@ -15,7 +20,9 @@ const sequelize = new Sequelize(
     dialect: dbConfig.dialect,
     logging: dbConfig.logging,
     pool: dbConfig.pool,
-    define: dbConfig.define
+    define: dbConfig.define,
+    dialectOptions: dbConfig.dialectOptions,
+    retry: dbConfig.retry || { max: 3 }
   }
 );
 
