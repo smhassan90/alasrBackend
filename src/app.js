@@ -32,21 +32,32 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Request logging
-if (process.env.NODE_ENV === 'development') {
+// Check if we're in a serverless environment (Vercel, AWS Lambda, etc.)
+const isServerless = process.env.VERCEL === '1' || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.SERVERLESS;
+
+if (process.env.NODE_ENV === 'development' || isServerless) {
+  // In development or serverless, log to console
   app.use(morgan('dev'));
 } else {
-  // Create logs directory if it doesn't exist
-  const logsDir = path.join(__dirname, '..', 'logs');
-  if (!fs.existsSync(logsDir)) {
-    fs.mkdirSync(logsDir, { recursive: true });
-  }
+  // In production (non-serverless), log to file
+  try {
+    // Create logs directory if it doesn't exist
+    const logsDir = path.join(__dirname, '..', 'logs');
+    if (!fs.existsSync(logsDir)) {
+      fs.mkdirSync(logsDir, { recursive: true });
+    }
 
-  // Log to file in production
-  const accessLogStream = fs.createWriteStream(
-    path.join(logsDir, 'access.log'),
-    { flags: 'a' }
-  );
-  app.use(morgan('combined', { stream: accessLogStream }));
+    // Log to file in production
+    const accessLogStream = fs.createWriteStream(
+      path.join(logsDir, 'access.log'),
+      { flags: 'a' }
+    );
+    app.use(morgan('combined', { stream: accessLogStream }));
+  } catch (error) {
+    // Fallback to console logging if file logging fails
+    console.warn('Could not set up file logging, using console:', error.message);
+    app.use(morgan('combined'));
+  }
 }
 
 // Rate limiting
