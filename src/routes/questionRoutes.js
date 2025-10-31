@@ -12,6 +12,9 @@ router.post('/', questionValidator.createQuestionValidator, validate, questionCo
 // All other routes require authentication
 router.use(authenticate);
 
+// Get ALL questions across all masajids (Super Admin only)
+router.get('/', questionController.getAllQuestions);
+
 // Get all questions for masjid (requires can_view_questions permission)
 router.get('/masjid/:masjidId', questionValidator.masjidIdParamValidator, validate, canViewQuestions, questionController.getQuestionsByMasjid);
 

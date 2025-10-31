@@ -5,6 +5,71 @@ const logger = require('../utils/logger');
 const { Op } = require('sequelize');
 
 /**
+ * Get ALL questions across all masajids (Super Admin only)
+ * @route GET /api/questions
+ */
+exports.getAllQuestions = async (req, res) => {
+  try {
+    const { page = 1, limit = 20, status, search, masjidId } = req.query;
+    const offset = (page - 1) * limit;
+
+    // Check if user is super admin
+    const user = await User.findByPk(req.userId);
+    if (!user || !user.is_super_admin) {
+      return responseHelper.forbidden(res, 'Only super admins can access all questions');
+    }
+
+    const whereClause = {};
+
+    if (status) {
+      whereClause.status = status;
+    }
+
+    if (masjidId) {
+      whereClause.masjid_id = masjidId;
+    }
+
+    if (search) {
+      whereClause[Op.or] = [
+        { title: { [Op.like]: `%${search}%` } },
+        { question: { [Op.like]: `%${search}%` } },
+        { user_name: { [Op.like]: `%${search}%` } }
+      ];
+    }
+
+    const { count, rows: questions } = await Question.findAndCountAll({
+      where: whereClause,
+      include: [
+        {
+          model: Masjid,
+          as: 'masjid',
+          attributes: ['id', 'name', 'city', 'state']
+        },
+        {
+          model: User,
+          as: 'replier',
+          attributes: ['id', 'name', 'email']
+        }
+      ],
+      limit: parseInt(limit),
+      offset: parseInt(offset),
+      order: [['created_at', 'DESC']]
+    });
+
+    logger.info(`Super admin ${req.userId} retrieved ${count} questions`);
+
+    return responseHelper.paginated(res, questions, {
+      page: parseInt(page),
+      limit: parseInt(limit),
+      totalItems: count
+    }, 'All questions retrieved successfully');
+  } catch (error) {
+    logger.error(`Get all questions error: ${error.message}`);
+    return responseHelper.error(res, 'Failed to retrieve questions', 500);
+  }
+};
+
+/**
  * Get all questions for a masjid
  * @route GET /api/questions/masjid/:masjidId
  */

@@ -1,6 +1,7 @@
-const { User, Masjid, UserMasjid } = require('../models');
+const { User, Masjid, UserMasjid, sequelize } = require('../models');
 const responseHelper = require('../utils/responseHelper');
 const logger = require('../utils/logger');
+const bcrypt = require('bcrypt');
 const { Op } = require('sequelize');
 
 /**
@@ -218,6 +219,153 @@ exports.activateUser = async (req, res) => {
   } catch (error) {
     logger.error(`Activate user error: ${error.message}`);
     return responseHelper.error(res, 'Failed to activate user', 500);
+  }
+};
+
+/**
+ * Create new user and optionally assign to masjid (Super Admin only)
+ * @route POST /api/super-admin/users
+ */
+exports.createUser = async (req, res) => {
+  const transaction = await sequelize.transaction();
+  
+  try {
+    const {
+      name,
+      email,
+      password,
+      phone,
+      is_super_admin = false,
+      masjid_assignment
+    } = req.body;
+
+    // Check if email already exists
+    const existingUser = await User.findOne({ where: { email } });
+    if (existingUser) {
+      return responseHelper.error(res, 'Email already registered', 400);
+    }
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Create user
+    const user = await User.create({
+      name,
+      email,
+      password: hashedPassword,
+      phone: phone || null,
+      is_super_admin,
+      is_active: true,
+      email_verified: true // Auto-verify for super admin created users
+    }, { transaction });
+
+    // If masjid assignment is provided, assign user to masjid
+    let userMasjid = null;
+    if (masjid_assignment && masjid_assignment.masjid_id) {
+      const { masjid_id, role, permissions } = masjid_assignment;
+
+      // Verify masjid exists
+      const masjid = await Masjid.findByPk(masjid_id);
+      if (!masjid) {
+        await transaction.rollback();
+        return responseHelper.error(res, 'Masjid not found', 404);
+      }
+
+      // Set default permissions based on role if not provided
+      const defaultPermissions = {
+        can_view_complaints: permissions?.can_view_complaints ?? (role === 'admin'),
+        can_answer_complaints: permissions?.can_answer_complaints ?? (role === 'admin'),
+        can_view_questions: permissions?.can_view_questions ?? true,
+        can_answer_questions: permissions?.can_answer_questions ?? true,
+        can_change_prayer_times: permissions?.can_change_prayer_times ?? true,
+        can_create_events: permissions?.can_create_events ?? true,
+        can_create_notifications: permissions?.can_create_notifications ?? true
+      };
+
+      userMasjid = await UserMasjid.create({
+        user_id: user.id,
+        masjid_id,
+        role,
+        assigned_by: req.userId,
+        ...defaultPermissions
+      }, { transaction });
+    }
+
+    await transaction.commit();
+
+    logger.info(`User ${user.email} created by super admin ${req.userId}`);
+
+    const response = {
+      user: user.toSafeObject(),
+      masjid_assignment: userMasjid ? {
+        masjid_id: userMasjid.masjid_id,
+        role: userMasjid.role,
+        permissions: {
+          can_view_complaints: userMasjid.can_view_complaints,
+          can_answer_complaints: userMasjid.can_answer_complaints,
+          can_view_questions: userMasjid.can_view_questions,
+          can_answer_questions: userMasjid.can_answer_questions,
+          can_change_prayer_times: userMasjid.can_change_prayer_times,
+          can_create_events: userMasjid.can_create_events,
+          can_create_notifications: userMasjid.can_create_notifications
+        }
+      } : null
+    };
+
+    return responseHelper.success(res, response, 'User created successfully', 201);
+  } catch (error) {
+    await transaction.rollback();
+    logger.error(`Create user error: ${error.message}`);
+    return responseHelper.error(res, 'Failed to create user', 500);
+  }
+};
+
+/**
+ * Delete user permanently (Super Admin only)
+ * @route DELETE /api/super-admin/users/:id
+ */
+exports.deleteUser = async (req, res) => {
+  const transaction = await sequelize.transaction();
+  
+  try {
+    const { id } = req.params;
+
+    // Cannot delete yourself
+    if (id === req.userId) {
+      return responseHelper.error(res, 'You cannot delete your own account', 400);
+    }
+
+    const user = await User.findByPk(id);
+    if (!user) {
+      return responseHelper.notFound(res, 'User not found');
+    }
+
+    // Prevent deleting the last super admin
+    if (user.is_super_admin) {
+      const superAdminCount = await User.count({ where: { is_super_admin: true } });
+      if (superAdminCount === 1) {
+        return responseHelper.error(res, 'Cannot delete the last super admin', 400);
+      }
+    }
+
+    // Remove user from all masajids first
+    await UserMasjid.destroy({
+      where: { user_id: id },
+      transaction
+    });
+
+    // Delete the user
+    await user.destroy({ transaction });
+
+    await transaction.commit();
+
+    logger.info(`User ${id} (${user.email}) deleted by super admin ${req.userId}`);
+
+    return responseHelper.success(res, null, 'User deleted successfully');
+  } catch (error) {
+    await transaction.rollback();
+    logger.error(`Delete user error: ${error.message}`);
+    return responseHelper.error(res, 'Failed to delete user', 500);
   }
 };
 

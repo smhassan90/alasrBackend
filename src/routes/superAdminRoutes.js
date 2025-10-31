@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const superAdminController = require('../controllers/superAdminController');
+const superAdminValidator = require('../validators/superAdminValidator');
+const { validate } = require('../middleware/validation');
 const { authenticate } = require('../middleware/auth');
 const { isSuperAdmin } = require('../middleware/superAdminAuth');
 
@@ -10,7 +12,9 @@ router.use(isSuperAdmin);
 
 // User management
 router.get('/users', superAdminController.getAllUsers);
+router.post('/users', superAdminValidator.createUserValidator, validate, superAdminController.createUser);
 router.get('/users/:id', superAdminController.getUserById);
+router.delete('/users/:id', superAdminController.deleteUser);
 
 // Super admin promotion/demotion
 router.put('/users/:id/promote', superAdminController.promoteToSuperAdmin);

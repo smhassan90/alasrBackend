@@ -5,6 +5,7 @@ const { Op } = require('sequelize');
 
 /**
  * Get all masajids for logged-in user
+ * Super admins see ALL masajids, regular users see only their masajids
  * @route GET /api/masajids
  */
 exports.getAllMasajids = async (req, res) => {
@@ -12,19 +13,36 @@ exports.getAllMasajids = async (req, res) => {
     const { page = 1, limit = 10, search } = req.query;
     const offset = (page - 1) * limit;
 
-    // Get masajid IDs user is associated with
-    const userMasajids = await UserMasjid.findAll({
-      where: { user_id: req.userId },
-      attributes: ['masjid_id']
-    });
-
-    const masjidIds = userMasajids.map(um => um.masjid_id);
+    // Check if user is super admin
+    const user = await User.findByPk(req.userId);
+    const isSuperAdmin = user && user.is_super_admin;
 
     // Build where clause
     const whereClause = {
-      id: { [Op.in]: masjidIds },
       is_active: true
     };
+
+    // If NOT super admin, filter by user's masajids
+    if (!isSuperAdmin) {
+      const userMasajids = await UserMasjid.findAll({
+        where: { user_id: req.userId },
+        attributes: ['masjid_id']
+      });
+
+      const masjidIds = userMasajids.map(um => um.masjid_id);
+
+      // If user has no masajids, return empty array
+      if (masjidIds.length === 0) {
+        return responseHelper.paginated(res, [], {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          totalItems: 0
+        }, 'No masajids found');
+      }
+
+      whereClause.id = { [Op.in]: masjidIds };
+    }
+    // Super admin sees ALL masajids (no id filter)
 
     if (search) {
       whereClause[Op.or] = [
@@ -38,8 +56,17 @@ exports.getAllMasajids = async (req, res) => {
       where: whereClause,
       limit: parseInt(limit),
       offset: parseInt(offset),
-      order: [['created_at', 'DESC']]
+      order: [['created_at', 'DESC']],
+      include: [
+        {
+          model: User,
+          as: 'creator',
+          attributes: ['id', 'name', 'email']
+        }
+      ]
     });
+
+    logger.info(`Masajids retrieved for user ${req.userId} (Super Admin: ${isSuperAdmin}): ${count} total`);
 
     return responseHelper.paginated(res, masajids, {
       page: parseInt(page),
@@ -300,12 +327,18 @@ exports.getMasjidStatistics = async (req, res) => {
 };
 
 /**
- * Get all members of a masjid
+ * Get all members of a masjid with their permissions
  * @route GET /api/masajids/:id/members
  */
 exports.getMasjidMembers = async (req, res) => {
   try {
     const { id } = req.params;
+
+    // Check if masjid exists
+    const masjid = await Masjid.findByPk(id);
+    if (!masjid) {
+      return responseHelper.notFound(res, 'Masjid not found');
+    }
 
     const members = await UserMasjid.findAll({
       where: { masjid_id: id },
@@ -313,41 +346,49 @@ exports.getMasjidMembers = async (req, res) => {
         {
           model: User,
           as: 'user',
-          attributes: ['id', 'name', 'email', 'phone', 'profile_picture']
+          attributes: ['id', 'name', 'email', 'phone', 'profile_picture', 'is_active']
         }
       ],
       order: [['assigned_at', 'DESC']]
     });
 
-    // Group by role
-    const imams = [];
-    const admins = [];
+    // Format members with full details including permissions
+    const formattedMembers = members.map(member => ({
+      id: member.id,
+      user_id: member.user.id,
+      user_name: member.user.name,
+      user_email: member.user.email,
+      user_phone: member.user.phone,
+      user_profile_picture: member.user.profile_picture,
+      user_is_active: member.user.is_active,
+      role: member.role,
+      permissions: {
+        can_view_complaints: member.can_view_complaints,
+        can_answer_complaints: member.can_answer_complaints,
+        can_view_questions: member.can_view_questions,
+        can_answer_questions: member.can_answer_questions,
+        can_change_prayer_times: member.can_change_prayer_times,
+        can_create_events: member.can_create_events,
+        can_create_notifications: member.can_create_notifications
+      },
+      assigned_at: member.assigned_at,
+      is_default: member.is_default
+    }));
 
-    members.forEach(member => {
-      const userData = {
-        id: member.user.id,
-        name: member.user.name,
-        email: member.user.email,
-        phone: member.user.phone,
-        profile_picture: member.user.profile_picture,
-        assignedAt: member.assigned_at,
-        isDefault: member.is_default
-      };
+    // Also provide grouped data
+    const imams = formattedMembers.filter(m => m.role === 'imam');
+    const admins = formattedMembers.filter(m => m.role === 'admin');
 
-      if (member.role === 'imam') {
-        imams.push(userData);
-      } else if (member.role === 'admin') {
-        admins.push(userData);
-      }
-    });
+    logger.info(`Retrieved ${members.length} members for masjid ${id}`);
 
     return responseHelper.success(res, {
+      members: formattedMembers,
       imams,
       admins,
       totalMembers: members.length
     }, 'Members retrieved successfully');
   } catch (error) {
-    logger.error(`Get masjid members error: ${error.message}`);
+    logger.error(`Get masjid members error: ${error.message}`, { masjidId: id, error: error.stack });
     return responseHelper.error(res, 'Failed to retrieve members', 500);
   }
 };

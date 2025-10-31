@@ -58,10 +58,16 @@ const limiter = rateLimit({
     message: 'Too many requests from this IP, please try again later.'
   },
   standardHeaders: true,
-  legacyHeaders: false
+  legacyHeaders: false,
+  // Skip rate limiting if request has skipRateLimit flag (set by super admin bypass)
+  skip: (req) => req.skipRateLimit === true
 });
 
-// Apply rate limiting to all routes
+// Super admin bypass middleware (checks before rate limiting)
+const { bypassRateLimitForSuperAdmin } = require('./middleware/rateLimitBypass');
+app.use('/api', bypassRateLimitForSuperAdmin);
+
+// Apply rate limiting to all routes (after bypass check)
 app.use('/api', limiter);
 
 // Stricter rate limiting for auth routes

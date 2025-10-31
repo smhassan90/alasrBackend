@@ -10,10 +10,18 @@ module.exports = {
     dialect: 'mysql',
     logging: false,
     pool: {
-      max: 5,
-      min: 0,
-      acquire: 30000,
-      idle: 10000
+      max: 20,           // Increased from 5 to handle more concurrent requests
+      min: 2,            // Keep minimum connections ready
+      acquire: 60000,    // Increased timeout to 60 seconds
+      idle: 10000,       // Close idle connections after 10 seconds
+      evict: 1000,       // Check for idle connections every second
+      handleDisconnects: true  // Automatically handle disconnects
+    },
+    dialectOptions: {
+      connectTimeout: 60000,  // 60 second connection timeout
+      // Handle connection resets
+      supportBigNumbers: true,
+      bigNumberStrings: true
     },
     define: {
       timestamps: true,
@@ -41,10 +49,17 @@ module.exports = {
     dialect: 'mysql',
     logging: false,
     pool: {
-      max: 10,
-      min: 2,
-      acquire: 30000,
-      idle: 10000
+      max: 30,           // Higher for production
+      min: 5,            // Keep more connections ready
+      acquire: 60000,    // 60 second timeout
+      idle: 10000,
+      evict: 1000,
+      handleDisconnects: true
+    },
+    dialectOptions: {
+      connectTimeout: 60000,
+      supportBigNumbers: true,
+      bigNumberStrings: true
     },
     define: {
       timestamps: true,
