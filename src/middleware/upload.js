@@ -4,22 +4,40 @@ const fs = require('fs');
 const uploadConfig = require('../config/upload');
 const responseHelper = require('../utils/responseHelper');
 
-// Ensure upload directory exists
-const uploadDir = uploadConfig.uploadDir;
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
+// Check if we're in a serverless environment (Vercel, AWS Lambda, etc.)
+const isServerless = process.env.VERCEL === '1' || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.SERVERLESS;
 
-// Configure storage
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, uploadDir);
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, 'profile-' + req.userId + '-' + uniqueSuffix + path.extname(file.originalname));
+// Configure storage based on environment
+let storage;
+
+if (isServerless) {
+  // Use memory storage in serverless (files are stored in memory)
+  // Note: For production serverless, you should upload to cloud storage (S3, Cloudinary, etc.)
+  storage = multer.memoryStorage();
+  console.warn('⚠️ Using memory storage for uploads (serverless environment). Files will not persist.');
+} else {
+  // Use disk storage in non-serverless environments
+  // Ensure upload directory exists
+  const uploadDir = uploadConfig.uploadDir;
+  try {
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    
+    storage = multer.diskStorage({
+      destination: function (req, file, cb) {
+        cb(null, uploadDir);
+      },
+      filename: function (req, file, cb) {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        cb(null, 'profile-' + req.userId + '-' + uniqueSuffix + path.extname(file.originalname));
+      }
+    });
+  } catch (error) {
+    console.warn('Could not set up disk storage, using memory storage:', error.message);
+    storage = multer.memoryStorage();
   }
-});
+}
 
 // File filter
 const fileFilter = (req, file, cb) => {
