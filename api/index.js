@@ -3,6 +3,16 @@
 
 require('dotenv').config();
 
+// Explicitly require mysql2 to ensure it's bundled by Vercel
+// This must be done before Sequelize tries to load it
+try {
+  require('mysql2');
+  console.log('✅ mysql2 loaded successfully');
+} catch (error) {
+  console.error('❌ mysql2 failed to load:', error.message);
+  throw error;
+}
+
 let app;
 
 try {

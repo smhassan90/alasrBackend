@@ -1,3 +1,7 @@
+// Explicitly require mysql2 before Sequelize to ensure it's available
+// This is critical for serverless environments like Vercel
+require('mysql2');
+
 const { Sequelize } = require('sequelize');
 const config = require('../config/database');
 
