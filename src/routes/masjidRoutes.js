@@ -4,10 +4,11 @@ const masjidController = require('../controllers/masjidController');
 const masjidValidator = require('../validators/masjidValidator');
 const { validate } = require('../middleware/validation');
 const { authenticate, optionalAuth } = require('../middleware/auth');
+const { optionalApiKeyOrAuth } = require('../middleware/apiKeyAuth');
 const { isMasjidMember, canManageMasjid } = require('../middleware/masjidAuth');
 
-// Get all masajids (public - no authentication required)
-router.get('/', optionalAuth, masjidController.getAllMasajids);
+// Get all masajids (accepts either API key or JWT token)
+router.get('/', optionalApiKeyOrAuth, optionalAuth, masjidController.getAllMasajids);
 
 // All other masjid routes require authentication
 router.use(authenticate);

@@ -7,7 +7,7 @@ exports.createPrayerTimeValidator = [
   
   body('prayerName')
     .notEmpty().withMessage('Prayer name is required')
-    .isIn(['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha']).withMessage('Invalid prayer name. Must be one of: Fajr, Dhuhr, Asr, Maghrib, Isha'),
+    .isIn(['Fajr', 'Dhuhr', 'Jummah', 'Asr', 'Maghrib', 'Isha']).withMessage('Invalid prayer name. Must be one of: Fajr, Dhuhr, Jummah, Asr, Maghrib, Isha'),
   
   body('prayerTime')
     .notEmpty().withMessage('Prayer time is required')
@@ -44,7 +44,7 @@ exports.bulkUpdateValidator = [
   
   body('prayerTimes.*.prayerName')
     .notEmpty().withMessage('Prayer name is required')
-    .isIn(['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha']).withMessage('Invalid prayer name'),
+    .isIn(['Fajr', 'Dhuhr', 'Jummah', 'Asr', 'Maghrib', 'Isha']).withMessage('Invalid prayer name'),
   
   body('prayerTimes.*.prayerTime')
     .notEmpty().withMessage('Prayer time is required')

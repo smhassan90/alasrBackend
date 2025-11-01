@@ -29,7 +29,7 @@ exports.getPrayerTimesByMasjid = async (req, res) => {
       ],
       order: [
         ['effective_date', 'DESC'],
-        [sequelize.literal("FIELD(prayer_name, 'Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha')")]
+        [sequelize.literal("FIELD(prayer_name, 'Fajr', 'Dhuhr', 'Jummah', 'Asr', 'Maghrib', 'Isha')")]
       ]
     });
 
@@ -58,7 +58,7 @@ exports.getTodaysPrayerTimes = async (req, res) => {
       },
       order: [
         ['effective_date', 'DESC'],
-        [sequelize.literal("FIELD(prayer_name, 'Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha')")]
+        [sequelize.literal("FIELD(prayer_name, 'Fajr', 'Dhuhr', 'Jummah', 'Asr', 'Maghrib', 'Isha')")]
       ]
     });
 

@@ -19,8 +19,13 @@ exports.getAllMasajids = async (req, res) => {
       is_active: true
     };
 
-    // If user is authenticated, apply filtering based on role
-    if (req.userId) {
+    // If user is authenticated via API key, show all masajids (public access)
+    if (req.isApiKeyAuth || req.apiKeyAuth) {
+      // API key auth: show all active masajids (public access)
+      // No filtering needed
+    }
+    // If user is authenticated via JWT token, apply filtering based on role
+    else if (req.userId) {
       const user = await User.findByPk(req.userId);
       const isSuperAdmin = user && user.is_super_admin;
 

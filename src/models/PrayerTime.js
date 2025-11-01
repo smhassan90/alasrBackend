@@ -16,10 +16,10 @@ module.exports = (sequelize) => {
       }
     },
     prayer_name: {
-      type: DataTypes.ENUM('Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'),
+      type: DataTypes.ENUM('Fajr', 'Dhuhr', 'Jummah', 'Asr', 'Maghrib', 'Isha'),
       allowNull: false,
       validate: {
-        isIn: [['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha']]
+        isIn: [['Fajr', 'Dhuhr', 'Jummah', 'Asr', 'Maghrib', 'Isha']]
       }
     },
     prayer_time: {
