@@ -25,5 +25,9 @@ router.get('/list', superAdminController.getAllSuperAdmins);
 router.put('/users/:id/activate', superAdminController.activateUser);
 router.put('/users/:id/deactivate', superAdminController.deactivateUser);
 
+// API Key management
+router.get('/api-key', superAdminController.getApiKey);
+router.post('/api-key/generate', superAdminController.generateApiKey);
+
 module.exports = router;
 
