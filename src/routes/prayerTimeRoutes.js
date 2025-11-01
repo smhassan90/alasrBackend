@@ -4,13 +4,24 @@ const prayerTimeController = require('../controllers/prayerTimeController');
 const prayerTimeValidator = require('../validators/prayerTimeValidator');
 const { validate } = require('../middleware/validation');
 const { authenticate, optionalAuth } = require('../middleware/auth');
+const { optionalApiKeyOrAuth } = require('../middleware/apiKeyAuth');
 const { isMasjidMember, canManagePrayerTimes, canManageMasjid } = require('../middleware/masjidAuth');
 
 // Get today's prayer times (public or authenticated)
 router.get('/masjid/:masjidId/today', prayerTimeValidator.masjidIdParamValidator, validate, optionalAuth, prayerTimeController.getTodaysPrayerTimes);
 
-// All other routes require authentication
-router.use(authenticate);
+// Allow API key or JWT token for read endpoints (GET requests)
+// For write endpoints (POST, PUT, DELETE), still require JWT authentication
+router.use((req, res, next) => {
+  // For GET requests, allow API key or JWT
+  if (req.method === 'GET') {
+    return optionalApiKeyOrAuth(req, res, () => {
+      optionalAuth(req, res, next);
+    });
+  }
+  // For other methods, require JWT authentication
+  return authenticate(req, res, next);
+});
 
 // Get all prayer times for masjid (member check)
 router.get('/masjid/:masjidId', prayerTimeValidator.masjidIdParamValidator, validate, isMasjidMember, prayerTimeController.getPrayerTimesByMasjid);

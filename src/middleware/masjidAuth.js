@@ -4,6 +4,7 @@ const logger = require('../utils/logger');
 
 /**
  * Check if user is a member of the masjid (any role)
+ * Allows API key authentication for read-only access
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
  * @param {Function} next - Express next middleware function
@@ -11,10 +12,21 @@ const logger = require('../utils/logger');
 exports.isMasjidMember = async (req, res, next) => {
   try {
     const masjidId = req.params.id || req.params.masjidId || req.body.masjidId;
-    const userId = req.userId;
 
     if (!masjidId) {
       return responseHelper.error(res, 'Masjid ID is required', 400);
+    }
+
+    // Allow API key authentication for read-only operations (GET requests)
+    if ((req.isApiKeyAuth || req.apiKeyAuth) && req.method === 'GET') {
+      req.masjidId = masjidId;
+      return next();
+    }
+
+    // For other operations or JWT auth, check membership
+    const userId = req.userId;
+    if (!userId) {
+      return responseHelper.unauthorized(res, 'Authentication required');
     }
 
     const isMember = await permissionChecker.isMasjidMember(userId, masjidId);

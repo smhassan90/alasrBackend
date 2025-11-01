@@ -3,11 +3,22 @@ const router = express.Router();
 const eventController = require('../controllers/eventController');
 const eventValidator = require('../validators/eventValidator');
 const { validate } = require('../middleware/validation');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, optionalAuth } = require('../middleware/auth');
+const { optionalApiKeyOrAuth } = require('../middleware/apiKeyAuth');
 const { isMasjidMember, isMasjidImamOrAdmin, canManageMasjid, canCreateEvents } = require('../middleware/masjidAuth');
 
-// All routes require authentication
-router.use(authenticate);
+// Allow API key or JWT token for read endpoints (GET requests)
+// For write endpoints (POST, PUT, DELETE), still require JWT authentication
+router.use((req, res, next) => {
+  // For GET requests, allow API key or JWT
+  if (req.method === 'GET') {
+    return optionalApiKeyOrAuth(req, res, () => {
+      optionalAuth(req, res, next);
+    });
+  }
+  // For other methods, require JWT authentication
+  return authenticate(req, res, next);
+});
 
 // Get all events for masjid (member check)
 router.get('/masjid/:masjidId', eventValidator.masjidIdParamValidator, validate, isMasjidMember, eventController.getEventsByMasjid);
