@@ -4,8 +4,9 @@ const logger = require('../utils/logger');
 const { Op } = require('sequelize');
 
 /**
- * Get all masajids for logged-in user
- * Super admins see ALL masajids, regular users see only their masajids
+ * Get all masajids
+ * Public access: Shows all active masajids
+ * Authenticated users: Super admins see ALL masajids, regular users see only their masajids
  * @route GET /api/masajids
  */
 exports.getAllMasajids = async (req, res) => {
@@ -13,36 +14,39 @@ exports.getAllMasajids = async (req, res) => {
     const { page = 1, limit = 10, search } = req.query;
     const offset = (page - 1) * limit;
 
-    // Check if user is super admin
-    const user = await User.findByPk(req.userId);
-    const isSuperAdmin = user && user.is_super_admin;
-
     // Build where clause
     const whereClause = {
       is_active: true
     };
 
-    // If NOT super admin, filter by user's masajids
-    if (!isSuperAdmin) {
-      const userMasajids = await UserMasjid.findAll({
-        where: { user_id: req.userId },
-        attributes: ['masjid_id']
-      });
+    // If user is authenticated, apply filtering based on role
+    if (req.userId) {
+      const user = await User.findByPk(req.userId);
+      const isSuperAdmin = user && user.is_super_admin;
 
-      const masjidIds = userMasajids.map(um => um.masjid_id);
+      // If NOT super admin, filter by user's masajids
+      if (!isSuperAdmin) {
+        const userMasajids = await UserMasjid.findAll({
+          where: { user_id: req.userId },
+          attributes: ['masjid_id']
+        });
 
-      // If user has no masajids, return empty array
-      if (masjidIds.length === 0) {
-        return responseHelper.paginated(res, [], {
-          page: parseInt(page),
-          limit: parseInt(limit),
-          totalItems: 0
-        }, 'No masajids found');
+        const masjidIds = userMasajids.map(um => um.masjid_id);
+
+        // If user has no masajids, return empty array
+        if (masjidIds.length === 0) {
+          return responseHelper.paginated(res, [], {
+            page: parseInt(page),
+            limit: parseInt(limit),
+            totalItems: 0
+          }, 'No masajids found');
+        }
+
+        whereClause.id = { [Op.in]: masjidIds };
       }
-
-      whereClause.id = { [Op.in]: masjidIds };
+      // Super admin sees ALL masajids (no id filter)
     }
-    // Super admin sees ALL masajids (no id filter)
+    // Public access (no userId): Shows ALL active masajids
 
     if (search) {
       whereClause[Op.or] = [
@@ -66,7 +70,10 @@ exports.getAllMasajids = async (req, res) => {
       ]
     });
 
-    logger.info(`Masajids retrieved for user ${req.userId} (Super Admin: ${isSuperAdmin}): ${count} total`);
+    const logMessage = req.userId 
+      ? `Masajids retrieved for user ${req.userId} (Super Admin: ${req.user?.is_super_admin || false}): ${count} total`
+      : `Masajids retrieved (public access): ${count} total`;
+    logger.info(logMessage);
 
     return responseHelper.paginated(res, masajids, {
       page: parseInt(page),

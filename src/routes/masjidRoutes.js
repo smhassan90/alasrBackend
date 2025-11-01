@@ -3,14 +3,14 @@ const router = express.Router();
 const masjidController = require('../controllers/masjidController');
 const masjidValidator = require('../validators/masjidValidator');
 const { validate } = require('../middleware/validation');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, optionalAuth } = require('../middleware/auth');
 const { isMasjidMember, canManageMasjid } = require('../middleware/masjidAuth');
 
-// All masjid routes require authentication
-router.use(authenticate);
+// Get all masajids (public - no authentication required)
+router.get('/', optionalAuth, masjidController.getAllMasajids);
 
-// Get all masajids for user (no specific masjid permission needed)
-router.get('/', masjidController.getAllMasajids);
+// All other masjid routes require authentication
+router.use(authenticate);
 
 // Create masjid (no specific masjid permission needed)
 router.post('/', masjidValidator.createMasjidValidator, validate, masjidController.createMasjid);
