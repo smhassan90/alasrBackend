@@ -153,6 +153,48 @@ exports.getQuestionById = async (req, res) => {
 };
 
 /**
+ * Get questions by email (public endpoint - for users to retrieve their own questions)
+ * @route GET /api/questions/by-email/:email
+ */
+exports.getQuestionsByEmail = async (req, res) => {
+  try {
+    const { email } = req.params;
+    const { page = 1, limit = 20 } = req.query;
+    const offset = (page - 1) * limit;
+
+    const { count, rows: questions } = await Question.findAndCountAll({
+      where: { user_email: email },
+      include: [
+        {
+          model: Masjid,
+          as: 'masjid',
+          attributes: ['id', 'name', 'city', 'state']
+        },
+        {
+          model: User,
+          as: 'replier',
+          attributes: ['id', 'name', 'email']
+        }
+      ],
+      limit: parseInt(limit),
+      offset: parseInt(offset),
+      order: [['created_at', 'DESC']]
+    });
+
+    logger.info(`Retrieved ${count} questions for email ${email}`);
+
+    return responseHelper.paginated(res, questions, {
+      page: parseInt(page),
+      limit: parseInt(limit),
+      totalItems: count
+    }, 'Questions retrieved successfully');
+  } catch (error) {
+    logger.error(`Get questions by email error: ${error.message}`);
+    return responseHelper.error(res, 'Failed to retrieve questions', 500);
+  }
+};
+
+/**
  * Submit new question (public endpoint)
  * @route POST /api/questions
  */

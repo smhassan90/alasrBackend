@@ -9,6 +9,9 @@ const { isMasjidMember, isMasjidImamOrAdmin, canManageMasjid, canViewQuestions, 
 // Public route - submit question
 router.post('/', questionValidator.createQuestionValidator, validate, questionController.createQuestion);
 
+// Public route - get questions by email (for users to retrieve their own questions)
+router.get('/by-email/:email', questionValidator.emailParamValidator, validate, questionController.getQuestionsByEmail);
+
 // All other routes require authentication
 router.use(authenticate);
 

@@ -60,3 +60,10 @@ exports.masjidIdParamValidator = [
     .isUUID().withMessage('Invalid masjid ID')
 ];
 
+exports.emailParamValidator = [
+  param('email')
+    .notEmpty().withMessage('Email is required')
+    .isEmail().withMessage('Please provide a valid email address')
+    .normalizeEmail()
+];
+
