@@ -50,22 +50,40 @@ exports.getUserById = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const user = await User.findByPk(id, {
-      attributes: { exclude: ['password', 'reset_password_token', 'reset_password_expires', 'email_verification_token'] },
-      include: [
-        {
-          model: UserMasjid,
-          as: 'userMasajids',
-          include: [
-            {
-              model: Masjid,
-              as: 'masjid',
-              attributes: ['id', 'name', 'city']
-            }
-          ]
-        }
-      ]
-    });
+    // Validate UUID format
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(id)) {
+      return responseHelper.error(res, 'Invalid user ID format', 400);
+    }
+
+    // Try to get user with masjid assignments
+    let user;
+    try {
+      user = await User.findByPk(id, {
+        attributes: { exclude: ['password', 'reset_password_token', 'reset_password_expires', 'email_verification_token'] },
+        include: [
+          {
+            model: UserMasjid,
+            as: 'userMasajids',
+            required: false, // Left join - include even if no masjid assignments
+            include: [
+              {
+                model: Masjid,
+                as: 'masjid',
+                required: false, // Left join - include even if masjid doesn't exist
+                attributes: ['id', 'name', 'city']
+              }
+            ]
+          }
+        ]
+      });
+    } catch (includeError) {
+      // If include fails, try without includes
+      logger.warn(`Include query failed, trying without includes: ${includeError.message}`);
+      user = await User.findByPk(id, {
+        attributes: { exclude: ['password', 'reset_password_token', 'reset_password_expires', 'email_verification_token'] }
+      });
+    }
 
     if (!user) {
       return responseHelper.notFound(res, 'User not found');
@@ -74,7 +92,12 @@ exports.getUserById = async (req, res) => {
     return responseHelper.success(res, user, 'User retrieved successfully');
   } catch (error) {
     logger.error(`Get user by ID error: ${error.message}`);
-    return responseHelper.error(res, 'Failed to retrieve user', 500);
+    logger.error(`Get user by ID error stack: ${error.stack}`);
+    return responseHelper.error(res, 'Failed to retrieve user', 500, {
+      message: error.message,
+      name: error.name,
+      ...(process.env.NODE_ENV !== 'production' && { stack: error.stack })
+    });
   }
 };
 
