@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const axios = require('axios');
 const { User, UserSettings } = require('../models');
 const { generateToken, generateRefreshToken, verifyRefreshToken } = require('../middleware/auth');
 const responseHelper = require('../utils/responseHelper');
@@ -253,6 +254,199 @@ exports.verifyEmail = async (req, res) => {
   } catch (error) {
     logger.error(`Email verification error: ${error.message}`);
     return responseHelper.error(res, 'Failed to verify email', 500);
+  }
+};
+
+/**
+ * Google OAuth redirect - initiates Google OAuth flow
+ * @route GET /api/auth/google/redirect
+ */
+exports.googleRedirect = async (req, res) => {
+  try {
+    const redirectUri = req.query.redirect_uri || 'yoursalaah://auth/callback';
+    const scope = req.query.scope || 'profile email openid';
+    const accessType = req.query.access_type || 'offline';
+    const prompt = req.query.prompt || 'consent';
+    
+    const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
+      `client_id=${process.env.GOOGLE_CLIENT_ID}&` +
+      `redirect_uri=${encodeURIComponent(process.env.GOOGLE_REDIRECT_URI)}&` +
+      `response_type=code&` +
+      `scope=${encodeURIComponent(scope)}&` +
+      `access_type=${accessType}&` +
+      `prompt=${prompt}&` +
+      `state=${encodeURIComponent(JSON.stringify({ app_redirect_uri: redirectUri }))}`;
+    
+    res.redirect(googleAuthUrl);
+  } catch (error) {
+    logger.error(`Google redirect error: ${error.message}`);
+    return responseHelper.error(res, 'Failed to initiate Google login', 500);
+  }
+};
+
+/**
+ * Google OAuth callback - handles Google OAuth callback
+ * @route GET /api/auth/google/callback
+ */
+exports.googleCallback = async (req, res) => {
+  try {
+    const { code, state } = req.query;
+    
+    if (!code) {
+      const stateData = req.query.state ? JSON.parse(decodeURIComponent(req.query.state)) : {};
+      const errorRedirect = `${stateData.app_redirect_uri || 'yoursalaah://auth/callback'}?error=authentication_failed&error_description=${encodeURIComponent('No authorization code received')}`;
+      return res.redirect(errorRedirect);
+    }
+    
+    // Parse state to get app redirect URI
+    const stateData = JSON.parse(decodeURIComponent(state || '{}'));
+    const appRedirectUri = stateData.app_redirect_uri || 'yoursalaah://auth/callback';
+    
+    // Exchange code for tokens
+    const tokenResponse = await axios.post('https://oauth2.googleapis.com/token', {
+      code,
+      client_id: process.env.GOOGLE_CLIENT_ID,
+      client_secret: process.env.GOOGLE_CLIENT_SECRET,
+      redirect_uri: process.env.GOOGLE_REDIRECT_URI,
+      grant_type: 'authorization_code'
+    });
+    
+    const { access_token, refresh_token: googleRefreshToken } = tokenResponse.data;
+    
+    // Get user info from Google
+    const userInfoResponse = await axios.get('https://www.googleapis.com/oauth2/v2/userinfo', {
+      headers: { Authorization: `Bearer ${access_token}` }
+    });
+    
+    const googleUser = userInfoResponse.data;
+    // googleUser contains: id, email, verified_email, name, given_name, family_name, picture, locale
+    
+    // Create or update user in database
+    let user = await User.findOne({ where: { email: googleUser.email } });
+    
+    if (!user) {
+      // Create new user
+      user = await User.create({
+        email: googleUser.email,
+        name: googleUser.name,
+        profile_picture: googleUser.picture,
+        auth_provider: 'google',
+        google_id: googleUser.id,
+        email_verified: googleUser.verified_email || true,
+        is_active: true,
+      });
+      
+      // Create default user settings
+      await UserSettings.create({
+        user_id: user.id
+      });
+      
+      logger.info(`New user created via Google OAuth: ${user.email}`);
+    } else {
+      // Update existing user
+      user.name = googleUser.name || user.name;
+      user.profile_picture = googleUser.picture || user.profile_picture;
+      user.google_id = googleUser.id;
+      user.auth_provider = 'google';
+      user.email_verified = googleUser.verified_email || user.email_verified;
+      await user.save();
+      
+      logger.info(`User updated via Google OAuth: ${user.email}`);
+    }
+    
+    // Check if user is active
+    if (!user.is_active) {
+      const errorRedirect = `${appRedirectUri}?error=account_deactivated&error_description=${encodeURIComponent('Account is deactivated')}`;
+      return res.redirect(errorRedirect);
+    }
+    
+    // Generate your app's JWT tokens
+    const appAccessToken = generateToken(user);
+    const appRefreshToken = generateRefreshToken(user);
+    
+    // Redirect to mobile app with tokens
+    const redirectUrl = `${appRedirectUri}?provider=google&token=${appAccessToken}&refresh_token=${appRefreshToken}`;
+    res.redirect(redirectUrl);
+    
+  } catch (error) {
+    logger.error(`Google OAuth callback error: ${error.message}`);
+    const stateData = req.query.state ? JSON.parse(decodeURIComponent(req.query.state)) : {};
+    const errorRedirect = `${stateData.app_redirect_uri || 'yoursalaah://auth/callback'}?error=authentication_failed&error_description=${encodeURIComponent(error.message)}`;
+    res.redirect(errorRedirect);
+  }
+};
+
+/**
+ * Google login - verifies Google access token directly (alternative endpoint)
+ * @route POST /api/auth/google
+ */
+exports.googleLogin = async (req, res) => {
+  try {
+    const { accessToken } = req.body;
+    
+    if (!accessToken) {
+      return responseHelper.error(res, 'Google access token is required', 400);
+    }
+    
+    // Verify token and get user info from Google
+    const userInfoResponse = await axios.get('https://www.googleapis.com/oauth2/v2/userinfo', {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+    
+    const googleUser = userInfoResponse.data;
+    
+    // Create or update user
+    let user = await User.findOne({ where: { email: googleUser.email } });
+    
+    if (!user) {
+      user = await User.create({
+        email: googleUser.email,
+        name: googleUser.name,
+        profile_picture: googleUser.picture,
+        auth_provider: 'google',
+        google_id: googleUser.id,
+        email_verified: googleUser.verified_email || true,
+        is_active: true,
+      });
+      
+      // Create default user settings
+      await UserSettings.create({
+        user_id: user.id
+      });
+      
+      logger.info(`New user created via Google login: ${user.email}`);
+    } else {
+      user.name = googleUser.name || user.name;
+      user.profile_picture = googleUser.picture || user.profile_picture;
+      user.google_id = googleUser.id;
+      user.auth_provider = 'google';
+      user.email_verified = googleUser.verified_email || user.email_verified;
+      await user.save();
+      
+      logger.info(`User updated via Google login: ${user.email}`);
+    }
+    
+    // Check if user is active
+    if (!user.is_active) {
+      return responseHelper.forbidden(res, 'Account is deactivated');
+    }
+    
+    // Generate app tokens
+    const appAccessToken = generateToken(user);
+    const appRefreshToken = generateRefreshToken(user);
+    
+    return responseHelper.success(res, {
+      user: user.toSafeObject(),
+      accessToken: appAccessToken,
+      refreshToken: appRefreshToken
+    }, 'Login successful');
+    
+  } catch (error) {
+    logger.error(`Google login error: ${error.message}`);
+    if (error.response?.status === 401) {
+      return responseHelper.unauthorized(res, 'Invalid Google access token');
+    }
+    return responseHelper.error(res, error.response?.data?.error_description || 'Failed to authenticate with Google', 401);
   }
 };
 

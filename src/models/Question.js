@@ -15,6 +15,19 @@ module.exports = (sequelize) => {
         key: 'id'
       }
     },
+    user_id: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      references: {
+        model: 'users',
+        key: 'id'
+      }
+    },
+    device_id: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+      comment: 'Unique device identifier for anonymous users (hashed deviceId:platform:appVersion)'
+    },
     user_name: {
       type: DataTypes.STRING(255),
       allowNull: false,
@@ -73,6 +86,9 @@ module.exports = (sequelize) => {
       },
       {
         fields: ['status']
+      },
+      {
+        fields: ['device_id']
       }
     ]
   });
@@ -82,6 +98,12 @@ module.exports = (sequelize) => {
     Question.belongsTo(models.Masjid, {
       foreignKey: 'masjid_id',
       as: 'masjid'
+    });
+
+    // Question belongs to User (if submitted by authenticated user)
+    Question.belongsTo(models.User, {
+      foreignKey: 'user_id',
+      as: 'user'
     });
 
     // Question was replied by User

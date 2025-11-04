@@ -25,11 +25,25 @@ module.exports = (sequelize) => {
         notEmpty: true
       }
     },
+    auth_provider: {
+      type: DataTypes.ENUM('local', 'google', 'facebook'),
+      defaultValue: 'local',
+      allowNull: true
+    },
+    google_id: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+      unique: true
+    },
+    facebook_id: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+      unique: true
+    },
     password: {
       type: DataTypes.STRING(255),
-      allowNull: false,
+      allowNull: true,
       validate: {
-        notEmpty: true,
         len: [6, 255]
       }
     },
@@ -76,13 +90,18 @@ module.exports = (sequelize) => {
     ],
     hooks: {
       beforeCreate: async (user) => {
-        if (user.password) {
+        // Only hash password if provided and auth_provider is local
+        if (user.password && (!user.auth_provider || user.auth_provider === 'local')) {
           const salt = await bcrypt.genSalt(parseInt(process.env.BCRYPT_SALT_ROUNDS) || 10);
           user.password = await bcrypt.hash(user.password, salt);
         }
+        // Set default auth_provider if not set
+        if (!user.auth_provider) {
+          user.auth_provider = 'local';
+        }
       },
       beforeUpdate: async (user) => {
-        if (user.changed('password')) {
+        if (user.changed('password') && user.password) {
           const salt = await bcrypt.genSalt(parseInt(process.env.BCRYPT_SALT_ROUNDS) || 10);
           user.password = await bcrypt.hash(user.password, salt);
         }

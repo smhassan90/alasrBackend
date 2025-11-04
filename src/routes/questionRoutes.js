@@ -6,14 +6,20 @@ const { validate } = require('../middleware/validation');
 const { authenticate } = require('../middleware/auth');
 const { isMasjidMember, isMasjidImamOrAdmin, canManageMasjid, canViewQuestions, canAnswerQuestions } = require('../middleware/masjidAuth');
 
-// Public route - submit question
-router.post('/', questionValidator.createQuestionValidator, validate, questionController.createQuestion);
+// Public route - submit question (anonymous users via device_id)
+router.post('/', questionValidator.setQuestionsValidator, validate, questionController.setQuestions);
+
+// Public route - get questions by device ID (for anonymous users to retrieve their questions)
+router.get('/by-device', questionValidator.getQuestionsValidator, validate, questionController.getQuestions);
 
 // Public route - get questions by email (for users to retrieve their own questions)
 router.get('/by-email/:email', questionValidator.emailParamValidator, validate, questionController.getQuestionsByEmail);
 
 // All other routes require authentication
 router.use(authenticate);
+
+// Get authenticated user's questions
+router.get('/my-questions', questionController.getMyQuestions);
 
 // Get ALL questions across all masajids (Super Admin only)
 router.get('/', questionController.getAllQuestions);

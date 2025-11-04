@@ -3,6 +3,7 @@ const responseHelper = require('../utils/responseHelper');
 const emailService = require('../utils/emailService');
 const logger = require('../utils/logger');
 const { Op } = require('sequelize');
+const { generateDeviceId, isValidDeviceId } = require('../utils/deviceId');
 
 /**
  * Get ALL questions across all masajids (Super Admin only)
@@ -153,17 +154,17 @@ exports.getQuestionById = async (req, res) => {
 };
 
 /**
- * Get questions by email (public endpoint - for users to retrieve their own questions)
- * @route GET /api/questions/by-email/:email
+ * Get questions by authenticated user (protected endpoint)
+ * @route GET /api/questions/my-questions
  */
-exports.getQuestionsByEmail = async (req, res) => {
+exports.getMyQuestions = async (req, res) => {
   try {
-    const { email } = req.params;
+    const userId = req.userId;
     const { page = 1, limit = 20 } = req.query;
     const offset = (page - 1) * limit;
 
     const { count, rows: questions } = await Question.findAndCountAll({
-      where: { user_email: email },
+      where: { user_id: userId },
       include: [
         {
           model: Masjid,
@@ -181,7 +182,7 @@ exports.getQuestionsByEmail = async (req, res) => {
       order: [['created_at', 'DESC']]
     });
 
-    logger.info(`Retrieved ${count} questions for email ${email}`);
+    logger.info(`Retrieved ${count} questions for user ${userId}`);
 
     return responseHelper.paginated(res, questions, {
       page: parseInt(page),
@@ -189,38 +190,110 @@ exports.getQuestionsByEmail = async (req, res) => {
       totalItems: count
     }, 'Questions retrieved successfully');
   } catch (error) {
-    logger.error(`Get questions by email error: ${error.message}`);
+    logger.error(`Get my questions error: ${error.message}`);
     return responseHelper.error(res, 'Failed to retrieve questions', 500);
   }
 };
 
 /**
- * Submit new question (public endpoint)
+ * Get questions by device ID (public endpoint - for anonymous users to retrieve their questions)
+ * @route GET /api/questions/by-device
+ */
+exports.getQuestions = async (req, res) => {
+  try {
+    const { deviceId, platform, appVersion } = req.query;
+    const { page = 1, limit = 20 } = req.query;
+    const offset = (page - 1) * limit;
+
+    // Validate device ID and platform
+    if (!deviceId || !platform) {
+      return responseHelper.error(res, 'Device ID and platform are required as query parameters', 400);
+    }
+
+    // Generate unique device identifier (same as when creating)
+    const uniqueDeviceId = generateDeviceId(deviceId, platform, appVersion || '');
+
+    const { count, rows: questions } = await Question.findAndCountAll({
+      where: { device_id: uniqueDeviceId },
+      include: [
+        {
+          model: Masjid,
+          as: 'masjid',
+          attributes: ['id', 'name', 'city', 'state']
+        },
+        {
+          model: User,
+          as: 'replier',
+          attributes: ['id', 'name', 'email']
+        }
+      ],
+      limit: parseInt(limit),
+      offset: parseInt(offset),
+      order: [['created_at', 'DESC']]
+    });
+
+    logger.info(`Retrieved ${count} questions for device ${uniqueDeviceId}`);
+
+    return responseHelper.paginated(res, questions, {
+      page: parseInt(page),
+      limit: parseInt(limit),
+      totalItems: count
+    }, 'Questions retrieved successfully');
+  } catch (error) {
+    logger.error(`Get questions by device error: ${error.message}`);
+    if (error.message.includes('required')) {
+      return responseHelper.error(res, error.message, 400);
+    }
+    return responseHelper.error(res, 'Failed to retrieve questions', 500);
+  }
+};
+
+/**
+ * Submit new question (public endpoint, supports anonymous users via device_id)
  * @route POST /api/questions
  */
-exports.createQuestion = async (req, res) => {
+exports.setQuestions = async (req, res) => {
   try {
-    const { masjidId, userName, userEmail, title, question } = req.body;
+    const { masjidId, deviceId, platform, appVersion, userName, userEmail, title, question } = req.body;
 
+    // Validate masjid exists
     const masjid = await Masjid.findByPk(masjidId);
     if (!masjid) {
       return responseHelper.notFound(res, 'Masjid not found');
     }
 
+    // Validate device ID is provided
+    if (!deviceId || !platform) {
+      return responseHelper.error(res, 'Device ID and platform are required', 400);
+    }
+
+    // Generate unique device identifier
+    const uniqueDeviceId = generateDeviceId(deviceId, platform, appVersion || '');
+
+    // Validate user name
+    if (!userName || userName.trim().length < 2) {
+      return responseHelper.error(res, 'User name is required and must be at least 2 characters', 400);
+    }
+
     const newQuestion = await Question.create({
       masjid_id: masjidId,
-      user_name: userName,
-      user_email: userEmail,
-      title,
-      question,
+      user_id: null, // Anonymous users don't have user_id
+      device_id: uniqueDeviceId,
+      user_name: userName.trim(),
+      user_email: userEmail ? userEmail.trim() : null,
+      title: title.trim(),
+      question: question.trim(),
       status: 'new'
     });
 
-    logger.info(`New question submitted for masjid ${masjidId}`);
+    logger.info(`New question submitted for masjid ${masjidId} by anonymous device ${uniqueDeviceId}`);
 
     return responseHelper.success(res, newQuestion, 'Question submitted successfully', 201);
   } catch (error) {
-    logger.error(`Create question error: ${error.message}`);
+    logger.error(`Set question error: ${error.message}`);
+    if (error.message.includes('required')) {
+      return responseHelper.error(res, error.message, 400);
+    }
     return responseHelper.error(res, 'Failed to submit question', 500);
   }
 };
