@@ -13,17 +13,23 @@ router.use(isSuperAdmin);
 // User management
 router.get('/users', superAdminController.getAllUsers);
 router.post('/users', superAdminValidator.createUserValidator, validate, superAdminController.createUser);
-router.get('/users/:id', superAdminController.getUserById);
-router.delete('/users/:id', superAdminController.deleteUser);
 
+// Specific routes MUST come before generic /users/:id route
 // Super admin promotion/demotion
 router.put('/users/:id/promote', superAdminController.promoteToSuperAdmin);
 router.put('/users/:id/demote', superAdminController.demoteFromSuperAdmin);
-router.get('/list', superAdminController.getAllSuperAdmins);
 
 // User activation/deactivation
 router.put('/users/:id/activate', superAdminController.activateUser);
 router.put('/users/:id/deactivate', superAdminController.deactivateUser);
+
+// Generic user routes (must come after specific routes)
+router.get('/users/:id', superAdminController.getUserById);
+router.put('/users/:id', superAdminValidator.updateUserValidator, validate, superAdminController.updateUser);
+router.delete('/users/:id', superAdminController.deleteUser);
+
+// Super admin list
+router.get('/list', superAdminController.getAllSuperAdmins);
 
 // API Key management
 router.get('/api-key', superAdminController.getApiKey);

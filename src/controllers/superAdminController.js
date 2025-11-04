@@ -322,6 +322,162 @@ exports.createUser = async (req, res) => {
 };
 
 /**
+ * Update user (Super Admin only)
+ * @route PUT /api/super-admin/users/:id
+ */
+exports.updateUser = async (req, res) => {
+  const transaction = await sequelize.transaction();
+  
+  try {
+    const { id } = req.params;
+    const { name, email, password, phone, is_active, masjid_assignment } = req.body;
+
+    const user = await User.findByPk(id, { transaction });
+    if (!user) {
+      await transaction.rollback();
+      return responseHelper.notFound(res, 'User not found');
+    }
+
+    // Update fields if provided
+    if (name !== undefined) {
+      user.name = name.trim();
+    }
+
+    if (email !== undefined) {
+      // Check if email is already taken by another user
+      const existingUser = await User.findOne({ 
+        where: { 
+          email: email.trim(),
+          id: { [Op.ne]: id }
+        },
+        transaction
+      });
+      
+      if (existingUser) {
+        await transaction.rollback();
+        return responseHelper.error(res, 'Email already registered', 400);
+      }
+      
+      user.email = email.trim();
+    }
+
+    if (password !== undefined) {
+      const hashedPassword = await bcrypt.hash(password, 10);
+      user.password = hashedPassword;
+    }
+
+    if (phone !== undefined) {
+      user.phone = phone ? phone.trim() : null;
+    }
+
+    if (is_active !== undefined) {
+      // Cannot deactivate yourself
+      if (!is_active && id === req.userId) {
+        await transaction.rollback();
+        return responseHelper.error(res, 'You cannot deactivate your own account', 400);
+      }
+      user.is_active = is_active;
+    }
+
+    await user.save({ transaction });
+
+    // Handle masjid_assignment
+    let userMasjid = null;
+    
+    if (masjid_assignment !== undefined) {
+      if (masjid_assignment === null) {
+        // Remove masjid assignment if null is provided
+        await UserMasjid.destroy({
+          where: { user_id: id },
+          transaction
+        });
+        logger.info(`Masjid assignment removed for user ${id}`);
+      } else if (masjid_assignment.masjid_id) {
+        // Verify masjid exists
+        const masjid = await Masjid.findByPk(masjid_assignment.masjid_id, { transaction });
+        if (!masjid) {
+          await transaction.rollback();
+          return responseHelper.error(res, 'Masjid not found', 404);
+        }
+
+        // Check if user already has a masjid assignment
+        const existingAssignment = await UserMasjid.findOne({
+          where: { user_id: id },
+          transaction
+        });
+
+        // Set default permissions based on role if not provided
+        const defaultPermissions = {
+          can_view_complaints: masjid_assignment.permissions?.can_view_complaints ?? (masjid_assignment.role === 'admin'),
+          can_answer_complaints: masjid_assignment.permissions?.can_answer_complaints ?? (masjid_assignment.role === 'admin'),
+          can_view_questions: masjid_assignment.permissions?.can_view_questions ?? true,
+          can_answer_questions: masjid_assignment.permissions?.can_answer_questions ?? true,
+          can_change_prayer_times: masjid_assignment.permissions?.can_change_prayer_times ?? true,
+          can_create_events: masjid_assignment.permissions?.can_create_events ?? true,
+          can_create_notifications: masjid_assignment.permissions?.can_create_notifications ?? true
+        };
+
+        if (existingAssignment) {
+          // Update existing assignment
+          existingAssignment.masjid_id = masjid_assignment.masjid_id;
+          existingAssignment.role = masjid_assignment.role;
+          existingAssignment.assigned_by = req.userId;
+          Object.assign(existingAssignment, defaultPermissions);
+          await existingAssignment.save({ transaction });
+          userMasjid = existingAssignment;
+          logger.info(`Masjid assignment updated for user ${id}`);
+        } else {
+          // Create new assignment
+          userMasjid = await UserMasjid.create({
+            user_id: id,
+            masjid_id: masjid_assignment.masjid_id,
+            role: masjid_assignment.role,
+            assigned_by: req.userId,
+            ...defaultPermissions
+          }, { transaction });
+          logger.info(`Masjid assignment created for user ${id}`);
+        }
+      }
+    } else {
+      // masjid_assignment not provided - fetch existing assignment for response
+      userMasjid = await UserMasjid.findOne({
+        where: { user_id: id },
+        transaction
+      });
+    }
+
+    await transaction.commit();
+
+    logger.info(`User ${id} updated by super admin ${req.userId}`);
+
+    // Return response matching create user format
+    const response = {
+      user: user.toSafeObject(),
+      masjid_assignment: userMasjid ? {
+        masjid_id: userMasjid.masjid_id,
+        role: userMasjid.role,
+        permissions: {
+          can_view_complaints: userMasjid.can_view_complaints,
+          can_answer_complaints: userMasjid.can_answer_complaints,
+          can_view_questions: userMasjid.can_view_questions,
+          can_answer_questions: userMasjid.can_answer_questions,
+          can_change_prayer_times: userMasjid.can_change_prayer_times,
+          can_create_events: userMasjid.can_create_events,
+          can_create_notifications: userMasjid.can_create_notifications
+        }
+      } : null
+    };
+
+    return responseHelper.success(res, response, 'User updated successfully');
+  } catch (error) {
+    await transaction.rollback();
+    logger.error(`Update user error: ${error.message}`);
+    logger.error(`Update user error stack: ${error.stack}`);
+    return responseHelper.error(res, 'Failed to update user', 500);
+  }
+};
+
+/**
  * Delete user permanently (Super Admin only)
  * @route DELETE /api/super-admin/users/:id
  */
