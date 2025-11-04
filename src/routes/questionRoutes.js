@@ -12,9 +12,6 @@ router.post('/', questionValidator.setQuestionsValidator, validate, questionCont
 // Public route - get questions by device ID (for anonymous users to retrieve their questions)
 router.get('/by-device', questionValidator.getQuestionsValidator, validate, questionController.getQuestions);
 
-// Public route - get questions by email (for users to retrieve their own questions)
-router.get('/by-email/:email', questionValidator.emailParamValidator, validate, questionController.getQuestionsByEmail);
-
 // All other routes require authentication
 router.use(authenticate);
 
