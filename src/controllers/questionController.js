@@ -291,10 +291,17 @@ exports.setQuestions = async (req, res) => {
     return responseHelper.success(res, newQuestion, 'Question submitted successfully', 201);
   } catch (error) {
     logger.error(`Set question error: ${error.message}`);
+    logger.error(`Set question error stack: ${error.stack}`);
     if (error.message.includes('required')) {
       return responseHelper.error(res, error.message, 400);
     }
-    return responseHelper.error(res, 'Failed to submit question', 500);
+    // Include error details in response for debugging
+    return responseHelper.error(res, 'Failed to submit question', 500, {
+      message: error.message,
+      name: error.name,
+      // Only include stack in development
+      ...(process.env.NODE_ENV !== 'production' && { stack: error.stack })
+    });
   }
 };
 
