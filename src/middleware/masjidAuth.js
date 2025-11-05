@@ -320,3 +320,55 @@ exports.canCreateNotifications = async (req, res, next) => {
     return responseHelper.error(res, 'Permission check failed', 500);
   }
 };
+
+/**
+ * Check if user can delete events
+ * User can delete if:
+ * - They are imam or admin for the masjid, OR
+ * - They created the event and have can_create_events permission
+ */
+exports.canDeleteEvent = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const userId = req.userId;
+
+    if (!id) {
+      return responseHelper.error(res, 'Event ID is required', 400);
+    }
+
+    // Import Event model
+    const { Event } = require('../models');
+    
+    // Get the event to check masjid_id and created_by
+    const event = await Event.findByPk(id);
+    if (!event) {
+      return responseHelper.notFound(res, 'Event not found');
+    }
+
+    const masjidId = event.masjid_id;
+
+    // Check if user is imam or admin for the masjid
+    const isImamOrAdmin = await permissionChecker.isMasjidImamOrAdmin(userId, masjidId);
+    
+    if (isImamOrAdmin) {
+      req.masjidId = masjidId;
+      req.event = event;
+      return next();
+    }
+
+    // Check if user created the event and has can_create_events permission
+    if (event.created_by === userId) {
+      const canCreateEvents = await permissionChecker.canCreateEvents(userId, masjidId);
+      if (canCreateEvents) {
+        req.masjidId = masjidId;
+        req.event = event;
+        return next();
+      }
+    }
+
+    return responseHelper.forbidden(res, 'You do not have permission to delete this event');
+  } catch (error) {
+    logger.error(`Delete event permission check error: ${error.message}`);
+    return responseHelper.error(res, 'Permission check failed', 500);
+  }
+};

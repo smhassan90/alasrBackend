@@ -13,7 +13,10 @@ exports.getEventsByMasjid = async (req, res) => {
     const { page = 1, limit = 10, search } = req.query;
     const offset = (page - 1) * limit;
 
-    const whereClause = { masjid_id: masjidId };
+    const whereClause = { 
+      masjid_id: masjidId,
+      status: 'active'  // Only get active events (not deleted)
+    };
 
     if (search) {
       whereClause[Op.or] = [
@@ -55,7 +58,11 @@ exports.getEventById = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const event = await Event.findByPk(id, {
+    const event = await Event.findOne({
+      where: {
+        id: id,
+        status: 'active'  // Only get active events (not deleted)
+      },
       include: [
         {
           model: Masjid,
@@ -138,6 +145,11 @@ exports.updateEvent = async (req, res) => {
       return responseHelper.notFound(res, 'Event not found');
     }
 
+    // Prevent updating deleted events
+    if (event.status === 'deleted') {
+      return responseHelper.error(res, 'Cannot update a deleted event', 400);
+    }
+
     if (name) event.name = name;
     if (description !== undefined) event.description = description;
     if (eventDate) event.event_date = eventDate;
@@ -167,7 +179,7 @@ exports.updateEvent = async (req, res) => {
 };
 
 /**
- * Delete event
+ * Delete event (soft delete - changes status to 'deleted')
  * @route DELETE /api/events/:id
  */
 exports.deleteEvent = async (req, res) => {
@@ -179,9 +191,16 @@ exports.deleteEvent = async (req, res) => {
       return responseHelper.notFound(res, 'Event not found');
     }
 
-    await event.destroy();
+    // Check if event is already deleted
+    if (event.status === 'deleted') {
+      return responseHelper.error(res, 'Event is already deleted', 400);
+    }
 
-    logger.info(`Event ${id} deleted by ${req.userId}`);
+    // Soft delete: change status to 'deleted' instead of destroying
+    event.status = 'deleted';
+    await event.save();
+
+    logger.info(`Event ${id} soft deleted by ${req.userId}`);
 
     return responseHelper.success(res, null, 'Event deleted successfully');
   } catch (error) {
@@ -202,6 +221,7 @@ exports.getUpcomingEvents = async (req, res) => {
     const events = await Event.findAll({
       where: {
         masjid_id: masjidId,
+        status: 'active',  // Only get active events (not deleted)
         event_date: {
           [Op.gte]: today
         }
@@ -238,6 +258,7 @@ exports.getPastEvents = async (req, res) => {
     const { count, rows: events } = await Event.findAndCountAll({
       where: {
         masjid_id: masjidId,
+        status: 'active',  // Only get active events (not deleted)
         event_date: {
           [Op.lt]: today
         }

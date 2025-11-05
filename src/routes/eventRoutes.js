@@ -5,7 +5,7 @@ const eventValidator = require('../validators/eventValidator');
 const { validate } = require('../middleware/validation');
 const { authenticate, optionalAuth } = require('../middleware/auth');
 const { optionalApiKeyOrAuth } = require('../middleware/apiKeyAuth');
-const { isMasjidMember, isMasjidImamOrAdmin, canManageMasjid, canCreateEvents } = require('../middleware/masjidAuth');
+const { isMasjidMember, isMasjidImamOrAdmin, canManageMasjid, canCreateEvents, canDeleteEvent } = require('../middleware/masjidAuth');
 
 // Allow API key or JWT token for read endpoints (GET requests)
 // For write endpoints (POST, PUT, DELETE), still require JWT authentication
@@ -38,8 +38,8 @@ router.post('/', eventValidator.createEventValidator, validate, canCreateEvents,
 // Update event (requires can_create_events permission)
 router.put('/:id', eventValidator.updateEventValidator, validate, eventController.updateEvent);
 
-// Delete event (admin only)
-router.delete('/:id', eventValidator.eventIdValidator, validate, eventController.deleteEvent);
+// Delete event (requires canDeleteEvent permission - imam, admin, or user who created it with can_create_events permission)
+router.delete('/:id', eventValidator.eventIdValidator, validate, canDeleteEvent, eventController.deleteEvent);
 
 module.exports = router;
 

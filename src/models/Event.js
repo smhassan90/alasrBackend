@@ -46,6 +46,11 @@ module.exports = (sequelize) => {
         model: 'users',
         key: 'id'
       }
+    },
+    status: {
+      type: DataTypes.ENUM('active', 'deleted'),
+      defaultValue: 'active',
+      allowNull: false
     }
   }, {
     tableName: 'events',
@@ -56,6 +61,9 @@ module.exports = (sequelize) => {
       },
       {
         fields: ['event_date']
+      },
+      {
+        fields: ['status']
       }
     ]
   });
