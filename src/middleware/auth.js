@@ -60,6 +60,11 @@ exports.authenticate = async (req, res, next) => {
  * @returns {string} JWT token
  */
 exports.generateToken = (user) => {
+  const options = {};
+  // Only set expiresIn if it's not null/undefined
+  if (jwtConfig.expiresIn) {
+    options.expiresIn = jwtConfig.expiresIn;
+  }
   return jwt.sign(
     { 
       id: user.id, 
@@ -67,7 +72,7 @@ exports.generateToken = (user) => {
       name: user.name
     },
     jwtConfig.secret,
-    { expiresIn: jwtConfig.expiresIn }
+    options
   );
 };
 
@@ -77,13 +82,18 @@ exports.generateToken = (user) => {
  * @returns {string} JWT refresh token
  */
 exports.generateRefreshToken = (user) => {
+  const options = {};
+  // Only set expiresIn if it's not null/undefined
+  if (jwtConfig.refreshExpiresIn) {
+    options.expiresIn = jwtConfig.refreshExpiresIn;
+  }
   return jwt.sign(
     { 
       id: user.id, 
       email: user.email
     },
     jwtConfig.refreshSecret,
-    { expiresIn: jwtConfig.refreshExpiresIn }
+    options
   );
 };
 
