@@ -245,11 +245,25 @@ exports.canViewQuestions = async (req, res, next) => {
 
 /**
  * Check if user can answer questions
+ * For question routes, loads the question first to get masjid_id
  */
 exports.canAnswerQuestions = async (req, res, next) => {
   try {
-    const masjidId = req.params.id || req.params.masjidId || req.body.masjidId;
     const userId = req.userId;
+    let masjidId = req.params.masjidId || req.body.masjidId;
+
+    // If masjidId is not in params or body, try to get it from the question
+    // This handles routes like PUT /questions/:id/reply
+    if (!masjidId && req.params.id) {
+      const { Question } = require('../models');
+      const question = await Question.findByPk(req.params.id);
+      
+      if (!question) {
+        return responseHelper.notFound(res, 'Question not found');
+      }
+      
+      masjidId = question.masjid_id;
+    }
 
     if (!masjidId) {
       return responseHelper.error(res, 'Masjid ID is required', 400);
