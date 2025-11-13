@@ -38,6 +38,12 @@ module.exports = (sequelize) => {
         model: 'users',
         key: 'id'
       }
+    },
+    notify_users: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
+      allowNull: false,
+      comment: 'Whether to notify users when prayer time is updated'
     }
   }, {
     tableName: 'prayer_times',

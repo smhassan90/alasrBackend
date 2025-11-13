@@ -16,7 +16,11 @@ exports.createPrayerTimeValidator = [
   body('effectiveDate')
     .optional()
     .isISO8601().withMessage('Invalid date format. Use YYYY-MM-DD')
-    .toDate()
+    .toDate(),
+  
+  body('notifyUsers')
+    .optional()
+    .isBoolean().withMessage('notifyUsers must be a boolean')
 ];
 
 exports.updatePrayerTimeValidator = [
@@ -31,7 +35,11 @@ exports.updatePrayerTimeValidator = [
   body('effectiveDate')
     .optional()
     .isISO8601().withMessage('Invalid date format. Use YYYY-MM-DD')
-    .toDate()
+    .toDate(),
+  
+  body('notifyUsers')
+    .optional()
+    .isBoolean().withMessage('notifyUsers must be a boolean')
 ];
 
 exports.bulkUpdateValidator = [
@@ -53,7 +61,11 @@ exports.bulkUpdateValidator = [
   body('effectiveDate')
     .optional()
     .isISO8601().withMessage('Invalid date format. Use YYYY-MM-DD')
-    .toDate()
+    .toDate(),
+  
+  body('notifyUsers')
+    .optional()
+    .isBoolean().withMessage('notifyUsers must be a boolean')
 ];
 
 exports.masjidIdParamValidator = [

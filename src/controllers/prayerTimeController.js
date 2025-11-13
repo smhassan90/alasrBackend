@@ -1,6 +1,7 @@
-const { PrayerTime, Masjid, User, sequelize } = require('../models');
+const { PrayerTime, Masjid, User, MasjidSubscription, UserSettings, sequelize } = require('../models');
 const responseHelper = require('../utils/responseHelper');
 const logger = require('../utils/logger');
+const pushNotificationService = require('../utils/pushNotificationService');
 const { Op } = require('sequelize');
 
 /**
@@ -85,7 +86,7 @@ exports.getTodaysPrayerTimes = async (req, res) => {
  */
 exports.createPrayerTime = async (req, res) => {
   try {
-    const { masjidId, prayerName, prayerTime, effectiveDate } = req.body;
+    const { masjidId, prayerName, prayerTime, effectiveDate, notifyUsers } = req.body;
 
     const masjid = await Masjid.findByPk(masjidId);
     if (!masjid) {
@@ -104,11 +105,15 @@ exports.createPrayerTime = async (req, res) => {
     });
 
     let prayerTimeRecord;
+    const wasUpdate = !!existingPrayerTime;
 
     if (existingPrayerTime) {
       // Update existing
       existingPrayerTime.prayer_time = prayerTime;
       existingPrayerTime.updated_by = req.userId;
+      if (notifyUsers !== undefined) {
+        existingPrayerTime.notify_users = notifyUsers;
+      }
       await existingPrayerTime.save();
       prayerTimeRecord = existingPrayerTime;
       
@@ -120,13 +125,21 @@ exports.createPrayerTime = async (req, res) => {
         prayer_name: prayerName,
         prayer_time: prayerTime,
         effective_date: date,
-        updated_by: req.userId
+        updated_by: req.userId,
+        notify_users: notifyUsers || false
       });
       
       logger.info(`Prayer time created: ${prayerName} for masjid ${masjidId} by ${req.userId}`);
     }
 
-    return responseHelper.success(res, prayerTimeRecord, 'Prayer time saved successfully', existingPrayerTime ? 200 : 201);
+    // Send notifications if requested
+    if (prayerTimeRecord.notify_users) {
+      sendPrayerTimeNotifications(masjid, prayerTimeRecord).catch(err => {
+        logger.error(`Failed to send prayer time notifications: ${err.message}`);
+      });
+    }
+
+    return responseHelper.success(res, prayerTimeRecord, 'Prayer time saved successfully', wasUpdate ? 200 : 201);
   } catch (error) {
     logger.error(`Create prayer time error: ${error.message}`);
     return responseHelper.error(res, 'Failed to save prayer time', 500);
@@ -140,20 +153,33 @@ exports.createPrayerTime = async (req, res) => {
 exports.updatePrayerTime = async (req, res) => {
   try {
     const { id } = req.params;
-    const { prayerTime, effectiveDate } = req.body;
+    const { prayerTime, effectiveDate, notifyUsers } = req.body;
 
-    const prayerTimeRecord = await PrayerTime.findByPk(id);
+    const prayerTimeRecord = await PrayerTime.findByPk(id, {
+      include: [{
+        model: Masjid,
+        as: 'masjid'
+      }]
+    });
     if (!prayerTimeRecord) {
       return responseHelper.notFound(res, 'Prayer time not found');
     }
 
     if (prayerTime) prayerTimeRecord.prayer_time = prayerTime;
     if (effectiveDate) prayerTimeRecord.effective_date = effectiveDate;
+    if (notifyUsers !== undefined) prayerTimeRecord.notify_users = notifyUsers;
     prayerTimeRecord.updated_by = req.userId;
 
     await prayerTimeRecord.save();
 
     logger.info(`Prayer time ${id} updated by ${req.userId}`);
+
+    // Send notifications if requested
+    if (prayerTimeRecord.notify_users) {
+      sendPrayerTimeNotifications(prayerTimeRecord.masjid, prayerTimeRecord).catch(err => {
+        logger.error(`Failed to send prayer time notifications: ${err.message}`);
+      });
+    }
 
     return responseHelper.success(res, prayerTimeRecord, 'Prayer time updated successfully');
   } catch (error) {
@@ -194,16 +220,18 @@ exports.bulkUpdatePrayerTimes = async (req, res) => {
   const transaction = await sequelize.transaction();
   
   try {
-    const { masjidId, prayerTimes, effectiveDate } = req.body;
+    const { masjidId, prayerTimes, effectiveDate, notifyUsers } = req.body;
 
     const masjid = await Masjid.findByPk(masjidId);
     if (!masjid) {
+      await transaction.rollback();
       return responseHelper.notFound(res, 'Masjid not found');
     }
 
     const date = effectiveDate || new Date().toISOString().split('T')[0];
 
     const createdPrayerTimes = [];
+    let shouldNotify = notifyUsers || false;
 
     for (const pt of prayerTimes) {
       // Check if exists
@@ -220,6 +248,9 @@ exports.bulkUpdatePrayerTimes = async (req, res) => {
         // Update
         existing.prayer_time = pt.prayerTime;
         existing.updated_by = req.userId;
+        if (notifyUsers !== undefined) {
+          existing.notify_users = notifyUsers;
+        }
         await existing.save({ transaction });
         createdPrayerTimes.push(existing);
       } else {
@@ -229,7 +260,8 @@ exports.bulkUpdatePrayerTimes = async (req, res) => {
           prayer_name: pt.prayerName,
           prayer_time: pt.prayerTime,
           effective_date: date,
-          updated_by: req.userId
+          updated_by: req.userId,
+          notify_users: notifyUsers || false
         }, { transaction });
         createdPrayerTimes.push(newPrayerTime);
       }
@@ -239,6 +271,15 @@ exports.bulkUpdatePrayerTimes = async (req, res) => {
 
     logger.info(`Bulk prayer times updated for masjid ${masjidId} by ${req.userId}`);
 
+    // Send notifications if requested (only once for all prayer times)
+    if (shouldNotify) {
+      // Get masjid info for notification
+      const masjidInfo = await Masjid.findByPk(masjidId);
+      sendPrayerTimeBulkNotifications(masjidInfo, createdPrayerTimes).catch(err => {
+        logger.error(`Failed to send bulk prayer time notifications: ${err.message}`);
+      });
+    }
+
     return responseHelper.success(res, createdPrayerTimes, 'Prayer times updated successfully');
   } catch (error) {
     await transaction.rollback();
@@ -246,4 +287,242 @@ exports.bulkUpdatePrayerTimes = async (req, res) => {
     return responseHelper.error(res, 'Failed to update prayer times', 500);
   }
 };
+
+/**
+ * Send push notifications to subscribers when prayer time is updated
+ * Only sends to users who:
+ * 1. Have subscribed to the masjid with category "Prayer Times"
+ * 2. Have prayer_times_notifications enabled in their settings (for authenticated users)
+ * 3. Have valid FCM tokens
+ */
+async function sendPrayerTimeNotifications(masjid, prayerTime) {
+  try {
+    // Get all active subscriptions for this masjid with category "Prayer Times"
+    const subscriptions = await MasjidSubscription.findAll({
+      where: {
+        masjid_id: masjid.id,
+        category: 'Prayer Times',
+        is_active: true,
+        fcm_token: { [Op.ne]: null }
+      },
+      include: [
+        {
+          model: User,
+          as: 'user',
+          required: false,
+          include: [
+            {
+              model: UserSettings,
+              as: 'settings',
+              required: false
+            }
+          ]
+        }
+      ]
+    });
+
+    if (subscriptions.length === 0) {
+      logger.info(`No active subscriptions found for masjid ${masjid.id}, category Prayer Times`);
+      return;
+    }
+
+    // Filter subscriptions:
+    // 1. For authenticated users: check if prayer_times_notifications is enabled
+    // 2. For anonymous users (device_id only): include them
+    const validSubscriptions = subscriptions.filter(sub => {
+      if (sub.user_id) {
+        // Authenticated user - check settings
+        const settings = sub.user?.settings;
+        // If no settings exist, default to true (as per UserSettings model default)
+        return !settings || settings.prayer_times_notifications === true;
+      } else {
+        // Anonymous user with device_id - include them
+        return true;
+      }
+    });
+
+    if (validSubscriptions.length === 0) {
+      logger.info(`No valid subscriptions with prayer notifications enabled for masjid ${masjid.id}`);
+      return;
+    }
+
+    logger.info(`Sending prayer time notifications to ${validSubscriptions.length} subscribers for masjid ${masjid.id}`);
+
+    // Collect all FCM tokens
+    const fcmTokens = validSubscriptions
+      .map(sub => sub.fcm_token)
+      .filter(token => token && token.trim() !== '');
+
+    if (fcmTokens.length === 0) {
+      logger.warn(`No valid FCM tokens found for masjid ${masjid.id}`);
+      return;
+    }
+
+    // Format prayer time for display
+    const prayerTimeStr = typeof prayerTime.prayer_time === 'string' 
+      ? prayerTime.prayer_time 
+      : prayerTime.prayer_time.toTimeString().slice(0, 5);
+
+    // Prepare notification message
+    const title = `Prayer Time Updated - ${masjid.name}`;
+    const body = `${prayerTime.prayer_name} prayer time has been updated to ${prayerTimeStr}`;
+
+    // Prepare notification data
+    const notificationData = {
+      masjidId: masjid.id,
+      masjidName: masjid.name,
+      prayerName: prayerTime.prayer_name,
+      prayerTime: prayerTimeStr,
+      effectiveDate: prayerTime.effective_date,
+      category: 'Prayer Times',
+      type: 'prayer_time_update'
+    };
+
+    // Send push notifications in batch
+    const result = await pushNotificationService.sendBatchPushNotifications(
+      fcmTokens,
+      title,
+      body,
+      notificationData
+    );
+
+    if (result.success) {
+      logger.info(`Prayer time push notifications sent: ${result.successful} successful, ${result.failed} failed for masjid ${masjid.id}`);
+      
+      // Handle invalid tokens - deactivate subscriptions with invalid tokens
+      if (result.results && result.results.length > 0) {
+        const invalidTokens = result.results
+          .filter(r => !r.success && (r.error?.code === 'messaging/invalid-registration-token' || r.error?.code === 'messaging/registration-token-not-registered'))
+          .map(r => r.token);
+
+        if (invalidTokens.length > 0) {
+          await MasjidSubscription.update(
+            { is_active: false },
+            {
+              where: {
+                masjid_id: masjid.id,
+                category: 'Prayer Times',
+                fcm_token: { [Op.in]: invalidTokens }
+              }
+            }
+          );
+          logger.info(`Deactivated ${invalidTokens.length} subscriptions with invalid FCM tokens`);
+        }
+      }
+    } else {
+      logger.error(`Failed to send prayer time push notifications: ${result.error}`);
+    }
+  } catch (error) {
+    logger.error(`Error sending prayer time notifications: ${error.message}`);
+    // Don't throw - we don't want to fail prayer time update if notification sending fails
+  }
+}
+
+/**
+ * Send push notifications for bulk prayer time updates
+ */
+async function sendPrayerTimeBulkNotifications(masjid, prayerTimes) {
+  try {
+    // Get all active subscriptions for this masjid with category "Prayer Times"
+    const subscriptions = await MasjidSubscription.findAll({
+      where: {
+        masjid_id: masjid.id,
+        category: 'Prayer Times',
+        is_active: true,
+        fcm_token: { [Op.ne]: null }
+      },
+      include: [
+        {
+          model: User,
+          as: 'user',
+          required: false,
+          include: [
+            {
+              model: UserSettings,
+              as: 'settings',
+              required: false
+            }
+          ]
+        }
+      ]
+    });
+
+    if (subscriptions.length === 0) {
+      logger.info(`No active subscriptions found for masjid ${masjid.id}, category Prayer Times`);
+      return;
+    }
+
+    // Filter subscriptions
+    const validSubscriptions = subscriptions.filter(sub => {
+      if (sub.user_id) {
+        const settings = sub.user?.settings;
+        return !settings || settings.prayer_times_notifications === true;
+      } else {
+        return true;
+      }
+    });
+
+    if (validSubscriptions.length === 0) {
+      logger.info(`No valid subscriptions with prayer notifications enabled for masjid ${masjid.id}`);
+      return;
+    }
+
+    logger.info(`Sending bulk prayer time notifications to ${validSubscriptions.length} subscribers for masjid ${masjid.id}`);
+
+    const fcmTokens = validSubscriptions
+      .map(sub => sub.fcm_token)
+      .filter(token => token && token.trim() !== '');
+
+    if (fcmTokens.length === 0) {
+      logger.warn(`No valid FCM tokens found for masjid ${masjid.id}`);
+      return;
+    }
+
+    const title = `Prayer Times Updated - ${masjid.name}`;
+    const body = `Prayer times have been updated for ${masjid.name}`;
+
+    const notificationData = {
+      masjidId: masjid.id,
+      masjidName: masjid.name,
+      category: 'Prayer Times',
+      type: 'prayer_time_bulk_update',
+      prayerTimesCount: prayerTimes.length.toString()
+    };
+
+    const result = await pushNotificationService.sendBatchPushNotifications(
+      fcmTokens,
+      title,
+      body,
+      notificationData
+    );
+
+    if (result.success) {
+      logger.info(`Bulk prayer time push notifications sent: ${result.successful} successful, ${result.failed} failed`);
+      
+      if (result.results && result.results.length > 0) {
+        const invalidTokens = result.results
+          .filter(r => !r.success && (r.error?.code === 'messaging/invalid-registration-token' || r.error?.code === 'messaging/registration-token-not-registered'))
+          .map(r => r.token);
+
+        if (invalidTokens.length > 0) {
+          await MasjidSubscription.update(
+            { is_active: false },
+            {
+              where: {
+                masjid_id: masjid.id,
+                category: 'Prayer Times',
+                fcm_token: { [Op.in]: invalidTokens }
+              }
+            }
+          );
+          logger.info(`Deactivated ${invalidTokens.length} subscriptions with invalid FCM tokens`);
+        }
+      }
+    } else {
+      logger.error(`Failed to send bulk prayer time push notifications: ${result.error}`);
+    }
+  } catch (error) {
+    logger.error(`Error sending bulk prayer time notifications: ${error.message}`);
+  }
+}
 
