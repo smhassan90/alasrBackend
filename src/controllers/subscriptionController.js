@@ -1,4 +1,4 @@
-const { MasjidSubscription, Masjid, User } = require('../models');
+const { MasjidSubscription, Masjid, User, Sequelize } = require('../models');
 const responseHelper = require('../utils/responseHelper');
 const logger = require('../utils/logger');
 const { Op } = require('sequelize');
@@ -223,12 +223,13 @@ exports.registerDevice = async (req, res) => {
     }
 
     // Update FCM token for all existing subscriptions for this device
+    // Only update anonymous device subscriptions (where user_id is null)
     const updatedCount = await MasjidSubscription.update(
       { fcm_token: fcmToken },
       {
         where: {
           device_id: deviceId,
-          user_id: { [Op.is]: null } // Only update anonymous device subscriptions
+          user_id: null
         }
       }
     );
@@ -244,8 +245,8 @@ exports.registerDevice = async (req, res) => {
       'Device registered successfully'
     );
   } catch (error) {
-    logger.error(`Register device error: ${error.message}`);
-    return responseHelper.error(res, 'Failed to register device', 500);
+    logger.error(`Register device error: ${error.message}`, { error: error.stack });
+    return responseHelper.error(res, `Failed to register device: ${error.message}`, 500);
   }
 };
 
