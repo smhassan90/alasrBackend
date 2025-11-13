@@ -1,6 +1,7 @@
-const { Notification, Masjid, User } = require('../models');
+const { Notification, Masjid, User, MasjidSubscription } = require('../models');
 const responseHelper = require('../utils/responseHelper');
 const logger = require('../utils/logger');
+const pushNotificationService = require('../utils/pushNotificationService');
 const { Op } = require('sequelize');
 
 /**
@@ -112,6 +113,11 @@ exports.createNotification = async (req, res) => {
 
     logger.info(`Notification created for masjid ${masjidId} by ${req.userId}`);
 
+    // Send notifications to subscribers (async, don't wait)
+    sendNotificationsToSubscribers(masjid, notification).catch(err => {
+      logger.error(`Failed to send notifications to subscribers: ${err.message}`);
+    });
+
     return responseHelper.success(res, notificationWithCreator, 'Notification created successfully', 201);
   } catch (error) {
     logger.error(`Create notification error: ${error.message}`);
@@ -210,4 +216,88 @@ exports.getRecentNotifications = async (req, res) => {
     return responseHelper.error(res, 'Failed to retrieve notifications', 500);
   }
 };
+
+/**
+ * Send push notifications to all subscribers for a masjid and category
+ * @param {Object} masjid - Masjid object
+ * @param {Object} notification - Notification object
+ */
+async function sendNotificationsToSubscribers(masjid, notification) {
+  try {
+    // Get all active subscriptions for this masjid and category
+    const subscriptions = await MasjidSubscription.findAll({
+      where: {
+        masjid_id: notification.masjid_id,
+        category: notification.category,
+        is_active: true,
+        fcm_token: { [Op.ne]: null }
+      }
+    });
+
+    if (subscriptions.length === 0) {
+      logger.info(`No active subscriptions with FCM tokens found for masjid ${notification.masjid_id}, category ${notification.category}`);
+      return;
+    }
+
+    logger.info(`Sending push notifications to ${subscriptions.length} subscribers for masjid ${notification.masjid_id}, category ${notification.category}`);
+
+    // Collect all FCM tokens
+    const fcmTokens = subscriptions
+      .map(sub => sub.fcm_token)
+      .filter(token => token && token.trim() !== '');
+
+    if (fcmTokens.length === 0) {
+      logger.warn(`No valid FCM tokens found for masjid ${notification.masjid_id}, category ${notification.category}`);
+      return;
+    }
+
+    // Prepare notification data
+    const notificationData = {
+      notificationId: notification.id,
+      masjidId: notification.masjid_id,
+      masjidName: masjid.name,
+      category: notification.category,
+      type: 'masjid_notification'
+    };
+
+    // Send push notifications in batch
+    const result = await pushNotificationService.sendBatchPushNotifications(
+      fcmTokens,
+      notification.title,
+      notification.description,
+      notificationData
+    );
+
+    if (result.success) {
+      logger.info(`Push notifications sent: ${result.successful} successful, ${result.failed} failed for masjid ${notification.masjid_id}`);
+      
+      // Handle invalid tokens - deactivate subscriptions with invalid tokens
+      if (result.results && result.results.length > 0) {
+        const invalidTokens = result.results
+          .filter(r => !r.success && (r.error?.code === 'messaging/invalid-registration-token' || r.error?.code === 'messaging/registration-token-not-registered'))
+          .map(r => r.token);
+
+        if (invalidTokens.length > 0) {
+          // Deactivate subscriptions with invalid tokens
+          await MasjidSubscription.update(
+            { is_active: false },
+            {
+              where: {
+                masjid_id: notification.masjid_id,
+                category: notification.category,
+                fcm_token: { [Op.in]: invalidTokens }
+              }
+            }
+          );
+          logger.info(`Deactivated ${invalidTokens.length} subscriptions with invalid FCM tokens`);
+        }
+      }
+    } else {
+      logger.error(`Failed to send push notifications: ${result.error}`);
+    }
+  } catch (error) {
+    logger.error(`Error sending push notifications to subscribers: ${error.message}`);
+    // Don't throw - we don't want to fail notification creation if push notification sending fails
+  }
+}
 

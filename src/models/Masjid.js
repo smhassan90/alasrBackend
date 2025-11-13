@@ -110,6 +110,12 @@ module.exports = (sequelize) => {
       foreignKey: 'masjid_id',
       as: 'events'
     });
+
+    // Masjid has many Subscriptions
+    Masjid.hasMany(models.MasjidSubscription, {
+      foreignKey: 'masjid_id',
+      as: 'subscriptions'
+    });
   };
 
   return Masjid;

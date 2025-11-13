@@ -26,6 +26,12 @@ const createTransporter = () => {
  * @returns {Promise<Object>}
  */
 exports.sendEmail = async ({ to, subject, text, html }) => {
+  // Check if email sending is disabled
+  if (process.env.ENABLE_EMAIL === 'false' || process.env.ENABLE_EMAIL === '0') {
+    logger.info(`Email sending is disabled. Would have sent to ${to} with subject: ${subject}`);
+    return { success: true, messageId: 'disabled', disabled: true };
+  }
+
   try {
     const transporter = createTransporter();
 

@@ -10,6 +10,7 @@ const prayerTimeRoutes = require('./prayerTimeRoutes');
 const questionRoutes = require('./questionRoutes');
 const notificationRoutes = require('./notificationRoutes');
 const eventRoutes = require('./eventRoutes');
+const subscriptionRoutes = require('./subscriptionRoutes');
 const superAdminRoutes = require('./superAdminRoutes');
 
 // Health check endpoint
@@ -31,6 +32,7 @@ router.use('/prayer-times', prayerTimeRoutes);
 router.use('/questions', questionRoutes);
 router.use('/notifications', notificationRoutes);
 router.use('/events', eventRoutes);
+router.use('/subscriptions', subscriptionRoutes);
 router.use('/super-admin', superAdminRoutes);
 
 module.exports = router;

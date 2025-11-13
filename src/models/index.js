@@ -39,6 +39,7 @@ const Question = require('./Question')(sequelize);
 const Notification = require('./Notification')(sequelize);
 const Event = require('./Event')(sequelize);
 const UserSettings = require('./UserSettings')(sequelize);
+const MasjidSubscription = require('./MasjidSubscription')(sequelize);
 
 // Create models object
 const models = {
@@ -50,6 +51,7 @@ const models = {
   Notification,
   Event,
   UserSettings,
+  MasjidSubscription,
   sequelize,
   Sequelize
 };
