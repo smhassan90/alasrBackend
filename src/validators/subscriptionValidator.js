@@ -48,3 +48,15 @@ exports.getSubscriptionsQueryValidator = [
     .trim()
 ];
 
+exports.registerDeviceValidator = [
+  body('deviceId')
+    .notEmpty().withMessage('Device ID is required')
+    .isString().withMessage('Device ID must be a string')
+    .trim(),
+  
+  body('fcmToken')
+    .notEmpty().withMessage('FCM token is required for push notifications')
+    .isString().withMessage('FCM token must be a string')
+    .trim()
+];
+

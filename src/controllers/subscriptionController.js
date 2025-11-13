@@ -209,3 +209,43 @@ exports.getMasjidSubscriptions = async (req, res) => {
   }
 };
 
+/**
+ * Register device with FCM token
+ * Updates FCM token for all existing subscriptions for this device
+ * @route POST /api/subscriptions/register-device
+ */
+exports.registerDevice = async (req, res) => {
+  try {
+    const { deviceId, fcmToken } = req.body;
+
+    if (!deviceId || !fcmToken) {
+      return responseHelper.error(res, 'Device ID and FCM token are required', 400);
+    }
+
+    // Update FCM token for all existing subscriptions for this device
+    const updatedCount = await MasjidSubscription.update(
+      { fcm_token: fcmToken },
+      {
+        where: {
+          device_id: deviceId,
+          user_id: { [Op.is]: null } // Only update anonymous device subscriptions
+        }
+      }
+    );
+
+    logger.info(`Device ${deviceId} registered/updated with FCM token. Updated ${updatedCount[0]} subscriptions.`);
+
+    return responseHelper.success(
+      res,
+      {
+        deviceId,
+        subscriptionsUpdated: updatedCount[0]
+      },
+      'Device registered successfully'
+    );
+  } catch (error) {
+    logger.error(`Register device error: ${error.message}`);
+    return responseHelper.error(res, 'Failed to register device', 500);
+  }
+};
+

@@ -20,5 +20,8 @@ router.get('/', subscriptionValidator.getSubscriptionsQueryValidator, validate, 
 // Get subscriptions for a specific masjid (for admin/imam to see subscribers)
 router.get('/masjid/:masjidId', subscriptionValidator.masjidIdParamValidator, validate, subscriptionController.getMasjidSubscriptions);
 
+// Register device with FCM token
+router.post('/register-device', subscriptionValidator.registerDeviceValidator, validate, subscriptionController.registerDevice);
+
 module.exports = router;
 
