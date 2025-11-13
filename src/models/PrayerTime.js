@@ -42,7 +42,7 @@ module.exports = (sequelize) => {
     notify_users: {
       type: DataTypes.BOOLEAN,
       defaultValue: false,
-      allowNull: false,
+      allowNull: true, // Allow null temporarily until migration is run
       comment: 'Whether to notify users when prayer time is updated'
     }
   }, {

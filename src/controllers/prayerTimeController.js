@@ -36,8 +36,8 @@ exports.getPrayerTimesByMasjid = async (req, res) => {
 
     return responseHelper.success(res, prayerTimes, 'Prayer times retrieved successfully');
   } catch (error) {
-    logger.error(`Get prayer times error: ${error.message}`);
-    return responseHelper.error(res, 'Failed to retrieve prayer times', 500);
+    logger.error(`Get prayer times error: ${error.message}`, { error: error.stack, masjidId });
+    return responseHelper.error(res, `Failed to retrieve prayer times: ${error.message}`, 500);
   }
 };
 
@@ -75,8 +75,8 @@ exports.getTodaysPrayerTimes = async (req, res) => {
 
     return responseHelper.success(res, result, 'Today\'s prayer times retrieved successfully');
   } catch (error) {
-    logger.error(`Get today's prayer times error: ${error.message}`);
-    return responseHelper.error(res, 'Failed to retrieve prayer times', 500);
+    logger.error(`Get today's prayer times error: ${error.message}`, { error: error.stack, masjidId });
+    return responseHelper.error(res, `Failed to retrieve prayer times: ${error.message}`, 500);
   }
 };
 
