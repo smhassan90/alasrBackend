@@ -218,6 +218,117 @@ exports.getRecentNotifications = async (req, res) => {
 };
 
 /**
+ * Send push notification directly (API key authentication - no login required)
+ * @route POST /api/notifications/send-push
+ */
+exports.sendPushNotification = async (req, res) => {
+  try {
+    const { masjidId, category, title, body, data = {} } = req.body;
+
+    // Validate masjid exists
+    const masjid = await Masjid.findByPk(masjidId);
+    if (!masjid) {
+      return responseHelper.notFound(res, 'Masjid not found');
+    }
+
+    // Validate category
+    const validCategories = ['Prayer Times', 'Donations', 'Events', 'General'];
+    if (!validCategories.includes(category)) {
+      return responseHelper.error(res, 'Invalid category. Must be one of: Prayer Times, Donations, Events, General', 400);
+    }
+
+    // Get all active subscriptions for this masjid and category
+    const subscriptions = await MasjidSubscription.findAll({
+      where: {
+        masjid_id: masjidId,
+        category: category,
+        is_active: true,
+        fcm_token: { [Op.ne]: null }
+      }
+    });
+
+    if (subscriptions.length === 0) {
+      logger.info(`No active subscriptions found for masjid ${masjidId}, category ${category}`);
+      return responseHelper.success(res, {
+        sent: 0,
+        total: 0,
+        message: 'No active subscriptions found for this masjid and category'
+      }, 'No subscribers to notify');
+    }
+
+    // Collect all FCM tokens
+    const fcmTokens = subscriptions
+      .map(sub => sub.fcm_token)
+      .filter(token => token && token.trim() !== '');
+
+    if (fcmTokens.length === 0) {
+      logger.warn(`No valid FCM tokens found for masjid ${masjidId}, category ${category}`);
+      return responseHelper.success(res, {
+        sent: 0,
+        total: 0,
+        message: 'No valid FCM tokens found'
+      }, 'No valid tokens to send notifications');
+    }
+
+    // Prepare notification data
+    const notificationData = {
+      masjidId: masjidId,
+      masjidName: masjid.name,
+      category: category,
+      type: 'masjid_notification',
+      ...data
+    };
+
+    // Send push notifications in batch
+    const result = await pushNotificationService.sendBatchPushNotifications(
+      fcmTokens,
+      title,
+      body,
+      notificationData
+    );
+
+    if (result.success) {
+      logger.info(`Push notifications sent via API: ${result.successful} successful, ${result.failed} failed for masjid ${masjidId}`);
+      
+      // Handle invalid tokens - deactivate subscriptions with invalid tokens
+      if (result.results && result.results.length > 0) {
+        const invalidTokens = result.results
+          .filter(r => !r.success && (r.error?.code === 'messaging/invalid-registration-token' || r.error?.code === 'messaging/registration-token-not-registered'))
+          .map(r => r.token);
+
+        if (invalidTokens.length > 0) {
+          await MasjidSubscription.update(
+            { is_active: false },
+            {
+              where: {
+                masjid_id: masjidId,
+                category: category,
+                fcm_token: { [Op.in]: invalidTokens }
+              }
+            }
+          );
+          logger.info(`Deactivated ${invalidTokens.length} subscriptions with invalid FCM tokens`);
+        }
+      }
+
+      return responseHelper.success(res, {
+        sent: result.successful,
+        failed: result.failed,
+        total: result.total,
+        masjidId: masjidId,
+        category: category
+      }, `Push notifications sent: ${result.successful} successful, ${result.failed} failed`);
+    } else {
+      logger.error(`Failed to send push notifications: ${result.error}`);
+      return responseHelper.error(res, `Failed to send push notifications: ${result.error}`, 500);
+    }
+  } catch (error) {
+    logger.error(`Send push notification error: ${error.message}`);
+    return responseHelper.error(res, 'Failed to send push notification', 500);
+  }
+};
+
+/**
  * Send push notifications to all subscribers for a masjid and category
  * @param {Object} masjid - Masjid object
  * @param {Object} notification - Notification object

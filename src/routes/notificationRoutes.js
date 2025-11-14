@@ -4,7 +4,7 @@ const notificationController = require('../controllers/notificationController');
 const notificationValidator = require('../validators/notificationValidator');
 const { validate } = require('../middleware/validation');
 const { authenticate, optionalAuth } = require('../middleware/auth');
-const { optionalApiKeyOrAuth } = require('../middleware/apiKeyAuth');
+const { optionalApiKeyOrAuth, authenticateApiKey } = require('../middleware/apiKeyAuth');
 const { isMasjidMember, isMasjidImamOrAdmin, canManageMasjid, canCreateNotifications } = require('../middleware/masjidAuth');
 
 // Allow API key or JWT token for read endpoints (GET requests)
@@ -28,6 +28,9 @@ router.get('/masjid/:masjidId/recent', notificationValidator.masjidIdParamValida
 
 // Get single notification (member check - checked in controller)
 router.get('/:id', notificationValidator.notificationIdValidator, validate, notificationController.getNotificationById);
+
+// Send push notification directly (API key authentication - no login required)
+router.post('/send-push', notificationValidator.sendPushNotificationValidator, validate, authenticateApiKey, notificationController.sendPushNotification);
 
 // Create notification (requires can_create_notifications permission)
 router.post('/', notificationValidator.createNotificationValidator, validate, canCreateNotifications, notificationController.createNotification);

@@ -1,4 +1,4 @@
-const { Masjid, UserMasjid, User, Question, Event, sequelize } = require('../models');
+const { Masjid, UserMasjid, User, Question, Event, MasjidSubscription, UserSettings, sequelize } = require('../models');
 const responseHelper = require('../utils/responseHelper');
 const logger = require('../utils/logger');
 const { Op } = require('sequelize');
@@ -75,12 +75,38 @@ exports.getAllMasajids = async (req, res) => {
       ]
     });
 
+    // Get user's active subscriptions if authenticated
+    let userSubscriptions = [];
+    if (req.userId) {
+      userSubscriptions = await MasjidSubscription.findAll({
+        where: {
+          user_id: req.userId,
+          is_active: true
+        },
+        attributes: ['masjid_id', 'category']
+      });
+    }
+
+    // Add subscription status to each masjid
+    const masajidsWithSubscription = masajids.map(masjid => {
+      const masjidData = masjid.toJSON();
+      
+      // Check if user has any active subscription for this masjid
+      const hasSubscription = userSubscriptions.some(
+        sub => sub.masjid_id === masjid.id
+      );
+      
+      masjidData.isSubscribed = hasSubscription;
+      
+      return masjidData;
+    });
+
     const logMessage = req.userId 
       ? `Masajids retrieved for user ${req.userId} (Super Admin: ${req.user?.is_super_admin || false}): ${count} total`
       : `Masajids retrieved (public access): ${count} total`;
     logger.info(logMessage);
 
-    return responseHelper.paginated(res, masajids, {
+    return responseHelper.paginated(res, masajidsWithSubscription, {
       page: parseInt(page),
       limit: parseInt(limit),
       totalItems: count

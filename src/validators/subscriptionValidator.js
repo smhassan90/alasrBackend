@@ -60,3 +60,19 @@ exports.registerDeviceValidator = [
     .trim()
 ];
 
+exports.toggleMasjidSubscriptionValidator = [
+  param('masjidId')
+    .notEmpty().withMessage('Masjid ID is required')
+    .isUUID().withMessage('Invalid masjid ID'),
+  
+  body('fcmToken')
+    .notEmpty().withMessage('FCM token is required for push notifications')
+    .isString().withMessage('FCM token must be a string')
+    .trim(),
+  
+  body('deviceId')
+    .optional()
+    .isString().withMessage('Device ID must be a string')
+    .trim()
+];
+

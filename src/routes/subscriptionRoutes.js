@@ -23,5 +23,8 @@ router.get('/masjid/:masjidId', subscriptionValidator.masjidIdParamValidator, va
 // Register device with FCM token
 router.post('/register-device', subscriptionValidator.registerDeviceValidator, validate, subscriptionController.registerDevice);
 
+// Toggle masjid subscription (subscribe/unsubscribe to all enabled categories)
+router.post('/masjid/:masjidId/toggle', subscriptionValidator.toggleMasjidSubscriptionValidator, validate, subscriptionController.toggleMasjidSubscription);
+
 module.exports = router;
 

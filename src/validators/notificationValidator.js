@@ -54,3 +54,27 @@ exports.masjidIdParamValidator = [
     .isUUID().withMessage('Invalid masjid ID')
 ];
 
+exports.sendPushNotificationValidator = [
+  body('masjidId')
+    .notEmpty().withMessage('Masjid ID is required')
+    .isUUID().withMessage('Invalid masjid ID'),
+  
+  body('category')
+    .notEmpty().withMessage('Category is required')
+    .isIn(['Prayer Times', 'Donations', 'Events', 'General']).withMessage('Invalid category. Must be one of: Prayer Times, Donations, Events, General'),
+  
+  body('title')
+    .trim()
+    .notEmpty().withMessage('Title is required')
+    .isLength({ min: 1, max: 255 }).withMessage('Title must be between 1 and 255 characters'),
+  
+  body('body')
+    .trim()
+    .notEmpty().withMessage('Body is required')
+    .isLength({ min: 1 }).withMessage('Body must not be empty'),
+  
+  body('data')
+    .optional()
+    .isObject().withMessage('Data must be an object')
+];
+
