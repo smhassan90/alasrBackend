@@ -75,12 +75,25 @@ exports.getAllMasajids = async (req, res) => {
       ]
     });
 
-    // Get user's active subscriptions if authenticated
+    // Get user's active subscriptions (authenticated or anonymous via deviceId)
     let userSubscriptions = [];
+    const { deviceId } = req.query;
+    
     if (req.userId) {
+      // Authenticated user: get subscriptions by userId
       userSubscriptions = await MasjidSubscription.findAll({
         where: {
           user_id: req.userId,
+          is_active: true
+        },
+        attributes: ['masjid_id', 'category']
+      });
+    } else if (deviceId) {
+      // Anonymous user: get subscriptions by deviceId
+      userSubscriptions = await MasjidSubscription.findAll({
+        where: {
+          device_id: deviceId,
+          user_id: { [Op.is]: null },
           is_active: true
         },
         attributes: ['masjid_id', 'category']
@@ -91,11 +104,12 @@ exports.getAllMasajids = async (req, res) => {
     const masajidsWithSubscription = masajids.map(masjid => {
       const masjidData = masjid.toJSON();
       
-      // Check if user has any active subscription for this masjid
+      // Check if user/device has any active subscription for this masjid
       const hasSubscription = userSubscriptions.some(
         sub => sub.masjid_id === masjid.id
       );
       
+      // Always include isSubscribed field (defaults to false if no subscriptions)
       masjidData.isSubscribed = hasSubscription;
       
       return masjidData;
