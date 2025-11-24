@@ -15,7 +15,7 @@ exports.createEventValidator = [
     .trim(),
   
   body('eventDate')
-    .notEmpty().withMessage('Event date is required')
+    .notEmpty().withMessage('Event date is required.')
     .isISO8601().withMessage('Invalid date format. Use YYYY-MM-DD')
     .toDate(),
   
