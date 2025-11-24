@@ -4,26 +4,21 @@ const logger = require('../utils/logger');
 const { Op } = require('sequelize');
 
 /**
- * Subscribe to masjid notifications for a specific category
+ * Subscribe to masjid notifications
  * @route POST /api/subscriptions
  * Supports both authenticated users (user_id) and anonymous users (device_id)
  * Requires fcm_token for push notifications
+ * Creates/updates ONE record per masjid (category preferences are stored in user_settings)
  */
 exports.subscribe = async (req, res) => {
   try {
-    const { masjidId, category, deviceId, fcmToken } = req.body;
+    const { masjidId, deviceId, fcmToken } = req.body;
     const userId = req.userId || null; // Optional - can be null for anonymous users
 
     // Validate masjid exists
     const masjid = await Masjid.findByPk(masjidId);
     if (!masjid) {
       return responseHelper.notFound(res, 'Masjid not found');
-    }
-
-    // Validate category
-    const validCategories = ['Prayer Times', 'Donations', 'Events', 'General'];
-    if (!validCategories.includes(category)) {
-      return responseHelper.error(res, 'Invalid category. Must be one of: Prayer Times, Donations, Events, General', 400);
     }
 
     // FCM token is required for push notifications
@@ -36,10 +31,9 @@ exports.subscribe = async (req, res) => {
       return responseHelper.error(res, 'Either user authentication or deviceId is required', 400);
     }
 
-    // Build where clause for checking existing subscription
+    // Build where clause for checking existing subscription (one record per masjid, no category)
     const whereClause = {
-      masjid_id: masjidId,
-      category
+      masjid_id: masjidId
     };
 
     if (userId) {
@@ -57,21 +51,21 @@ exports.subscribe = async (req, res) => {
       subscription.fcm_token = fcmToken;
       subscription.is_active = true;
       await subscription.save();
-      logger.info(`Subscription updated for masjid ${masjidId}, category ${category}`);
+      logger.info(`Subscription updated for masjid ${masjidId}`);
       return responseHelper.success(res, subscription, subscription.is_active ? 'Subscription updated successfully' : 'Subscription reactivated successfully');
     }
 
-    // Create new subscription
+    // Create new subscription (no category - preferences stored in user_settings)
     subscription = await MasjidSubscription.create({
       masjid_id: masjidId,
       user_id: userId,
       device_id: deviceId || null,
       fcm_token: fcmToken,
-      category,
+      category: null, // Category is deprecated - preferences stored in user_settings
       is_active: true
     });
 
-    logger.info(`Subscription created for masjid ${masjidId}, category ${category}`);
+    logger.info(`Subscription created for masjid ${masjidId}`);
 
     return responseHelper.success(res, subscription, 'Subscribed successfully', 201);
   } catch (error) {
@@ -81,12 +75,13 @@ exports.subscribe = async (req, res) => {
 };
 
 /**
- * Unsubscribe from masjid notifications for a specific category
+ * Unsubscribe from masjid notifications
  * @route DELETE /api/subscriptions
+ * Deactivates ONE record per masjid (category preferences remain in user_settings)
  */
 exports.unsubscribe = async (req, res) => {
   try {
-    const { masjidId, category, deviceId } = req.body;
+    const { masjidId, deviceId } = req.body;
     const userId = req.userId || null;
 
     // At least one identifier must be provided
@@ -94,10 +89,9 @@ exports.unsubscribe = async (req, res) => {
       return responseHelper.error(res, 'Either user authentication or deviceId is required', 400);
     }
 
-    // Build where clause
+    // Build where clause (one record per masjid, no category filter)
     const whereClause = {
-      masjid_id: masjidId,
-      category
+      masjid_id: masjidId
     };
 
     if (userId) {
@@ -117,7 +111,7 @@ exports.unsubscribe = async (req, res) => {
     subscription.is_active = false;
     await subscription.save();
 
-    logger.info(`Subscription deactivated for masjid ${masjidId}, category ${category}`);
+    logger.info(`Subscription deactivated for masjid ${masjidId}`);
 
     return responseHelper.success(res, null, 'Unsubscribed successfully');
   } catch (error) {
@@ -174,23 +168,17 @@ exports.getSubscriptions = async (req, res) => {
 /**
  * Get subscriptions for a specific masjid
  * @route GET /api/subscriptions/masjid/:masjidId
+ * Note: Category filter removed - one subscription per masjid, category preferences in user_settings
  */
 exports.getMasjidSubscriptions = async (req, res) => {
   try {
     const { masjidId } = req.params;
-    const { category } = req.query;
-
-    const whereClause = {
-      masjid_id: masjidId,
-      is_active: true
-    };
-
-    if (category) {
-      whereClause.category = category;
-    }
 
     const subscriptions = await MasjidSubscription.findAll({
-      where: whereClause,
+      where: {
+        masjid_id: masjidId,
+        is_active: true
+      },
       include: [
         {
           model: User,
@@ -251,9 +239,9 @@ exports.registerDevice = async (req, res) => {
 };
 
 /**
- * Subscribe/Unsubscribe to masjid notifications for all enabled categories
- * Uses user's notification preferences to determine which categories to subscribe
+ * Toggle subscribe/unsubscribe to masjid notifications
  * @route POST /api/subscriptions/masjid/:masjidId/toggle
+ * Creates/updates ONE record per masjid (category preferences stored in user_settings)
  */
 exports.toggleMasjidSubscription = async (req, res) => {
   try {
@@ -277,40 +265,7 @@ exports.toggleMasjidSubscription = async (req, res) => {
       return responseHelper.error(res, 'Device ID is required for anonymous users', 400);
     }
 
-    // Get user's notification preferences
-    let userSettings = null;
-    if (userId) {
-      userSettings = await UserSettings.findOne({
-        where: { user_id: userId }
-      });
-    }
-
-    // If no user settings, create default (all enabled)
-    if (!userSettings && userId) {
-      userSettings = await UserSettings.create({
-        user_id: userId
-      });
-    }
-
-    // Map user settings to subscription categories
-    // Note: questions_notifications doesn't have a subscription category
-    const categoryMapping = {
-      'Prayer Times': userSettings?.prayer_times_notifications !== false,
-      'Events': userSettings?.events_notifications !== false,
-      'Donations': userSettings?.donations_notifications !== false,
-      'General': userSettings?.general_notifications !== false
-    };
-
-    // Get enabled categories
-    const enabledCategories = Object.keys(categoryMapping).filter(
-      cat => categoryMapping[cat] === true
-    );
-
-    if (enabledCategories.length === 0) {
-      return responseHelper.error(res, 'No notification categories enabled in your preferences. Please enable at least one category in settings.', 400);
-    }
-
-    // Check current subscriptions for this masjid
+    // Build where clause for checking existing subscription (one record per masjid)
     const subscriptionWhere = {
       masjid_id: masjidId
     };
@@ -324,73 +279,42 @@ exports.toggleMasjidSubscription = async (req, res) => {
       }
     }
     
-    const existingSubscriptions = await MasjidSubscription.findAll({
+    // Check if subscription already exists
+    let subscription = await MasjidSubscription.findOne({
       where: subscriptionWhere
     });
 
-    const hasActiveSubscription = existingSubscriptions.some(sub => sub.is_active);
-
-    if (hasActiveSubscription) {
-      // Unsubscribe: Deactivate all subscriptions for this masjid
-      await MasjidSubscription.update(
-        { is_active: false },
-        {
-          where: subscriptionWhere
-        }
-      );
+    if (subscription && subscription.is_active) {
+      // Unsubscribe: Deactivate subscription
+      subscription.is_active = false;
+      await subscription.save();
 
       logger.info(`Unsubscribed from masjid ${masjidId} for user ${userId || 'anonymous'}`);
       return responseHelper.success(res, { subscribed: false }, 'Unsubscribed successfully');
     } else {
-      // Subscribe: Create/activate subscriptions for all enabled categories
-      const subscriptionResults = [];
-
-      for (const category of enabledCategories) {
-        // Check if subscription already exists (inactive)
-        const categoryWhere = {
+      // Subscribe: Create or reactivate subscription
+      if (subscription) {
+        // Reactivate and update FCM token
+        subscription.is_active = true;
+        subscription.fcm_token = fcmToken;
+        await subscription.save();
+      } else {
+        // Create new subscription (no category - preferences stored in user_settings)
+        subscription = await MasjidSubscription.create({
           masjid_id: masjidId,
-          category: category
-        };
-        
-        if (userId) {
-          categoryWhere.user_id = userId;
-        } else {
-          categoryWhere.user_id = { [Op.is]: null };
-          if (req.body.deviceId) {
-            categoryWhere.device_id = req.body.deviceId;
-          }
-        }
-        
-        let subscription = await MasjidSubscription.findOne({
-          where: categoryWhere
+          user_id: userId,
+          device_id: userId ? null : (req.body.deviceId || null),
+          fcm_token: fcmToken,
+          category: null, // Category is deprecated - preferences stored in user_settings
+          is_active: true
         });
-
-        if (subscription) {
-          // Reactivate and update FCM token
-          subscription.is_active = true;
-          subscription.fcm_token = fcmToken;
-          await subscription.save();
-          subscriptionResults.push(subscription);
-        } else {
-          // Create new subscription
-          subscription = await MasjidSubscription.create({
-            masjid_id: masjidId,
-            user_id: userId,
-            device_id: userId ? null : (req.body.deviceId || null),
-            fcm_token: fcmToken,
-            category: category,
-            is_active: true
-          });
-          subscriptionResults.push(subscription);
-        }
       }
 
-      logger.info(`Subscribed to masjid ${masjidId} for categories: ${enabledCategories.join(', ')}`);
+      logger.info(`Subscribed to masjid ${masjidId}`);
       return responseHelper.success(res, {
         subscribed: true,
-        categories: enabledCategories,
-        subscriptions: subscriptionResults
-      }, `Subscribed successfully to ${enabledCategories.length} category/categories`);
+        subscription: subscription
+      }, 'Subscribed successfully');
     }
   } catch (error) {
     logger.error(`Toggle masjid subscription error: ${error.message}`);

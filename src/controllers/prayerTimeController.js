@@ -297,11 +297,10 @@ exports.bulkUpdatePrayerTimes = async (req, res) => {
  */
 async function sendPrayerTimeNotifications(masjid, prayerTime) {
   try {
-    // Get all active subscriptions for this masjid with category "Prayer Times"
+    // Get all active subscriptions for this masjid (no category filter - one record per masjid)
     const subscriptions = await MasjidSubscription.findAll({
       where: {
         masjid_id: masjid.id,
-        category: 'Prayer Times',
         is_active: true,
         fcm_token: { [Op.ne]: null }
       },
@@ -401,7 +400,6 @@ async function sendPrayerTimeNotifications(masjid, prayerTime) {
             {
               where: {
                 masjid_id: masjid.id,
-                category: 'Prayer Times',
                 fcm_token: { [Op.in]: invalidTokens }
               }
             }
@@ -423,11 +421,10 @@ async function sendPrayerTimeNotifications(masjid, prayerTime) {
  */
 async function sendPrayerTimeBulkNotifications(masjid, prayerTimes) {
   try {
-    // Get all active subscriptions for this masjid with category "Prayer Times"
+    // Get all active subscriptions for this masjid (no category filter - one record per masjid)
     const subscriptions = await MasjidSubscription.findAll({
       where: {
         masjid_id: masjid.id,
-        category: 'Prayer Times',
         is_active: true,
         fcm_token: { [Op.ne]: null }
       },
@@ -510,7 +507,6 @@ async function sendPrayerTimeBulkNotifications(masjid, prayerTimes) {
             {
               where: {
                 masjid_id: masjid.id,
-                category: 'Prayer Times',
                 fcm_token: { [Op.in]: invalidTokens }
               }
             }

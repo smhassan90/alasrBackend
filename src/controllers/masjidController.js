@@ -86,7 +86,7 @@ exports.getAllMasajids = async (req, res) => {
           user_id: req.userId,
           is_active: true
         },
-        attributes: ['masjid_id', 'category']
+        attributes: ['masjid_id']
       });
     } else if (deviceId) {
       // Anonymous user: get subscriptions by deviceId
@@ -96,7 +96,7 @@ exports.getAllMasajids = async (req, res) => {
           user_id: { [Op.is]: null },
           is_active: true
         },
-        attributes: ['masjid_id', 'category']
+        attributes: ['masjid_id']
       });
     }
 

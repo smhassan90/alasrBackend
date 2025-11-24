@@ -1,4 +1,4 @@
-const { Notification, Masjid, User, MasjidSubscription } = require('../models');
+const { Notification, Masjid, User, MasjidSubscription, UserSettings } = require('../models');
 const responseHelper = require('../utils/responseHelper');
 const logger = require('../utils/logger');
 const pushNotificationService = require('../utils/pushNotificationService');
@@ -237,27 +237,72 @@ exports.sendPushNotification = async (req, res) => {
       return responseHelper.error(res, 'Invalid category. Must be one of: Prayer Times, Donations, Events, General', 400);
     }
 
-    // Get all active subscriptions for this masjid and category
+    // Get all active subscriptions for this masjid (no category filter - one record per masjid)
     const subscriptions = await MasjidSubscription.findAll({
       where: {
         masjid_id: masjidId,
-        category: category,
         is_active: true,
         fcm_token: { [Op.ne]: null }
-      }
+      },
+      include: [
+        {
+          model: User,
+          as: 'user',
+          required: false,
+          include: [
+            {
+              model: UserSettings,
+              as: 'settings',
+              required: false
+            }
+          ]
+        }
+      ]
     });
 
     if (subscriptions.length === 0) {
-      logger.info(`No active subscriptions found for masjid ${masjidId}, category ${category}`);
+      logger.info(`No active subscriptions found for masjid ${masjidId}`);
       return responseHelper.success(res, {
         sent: 0,
         total: 0,
-        message: 'No active subscriptions found for this masjid and category'
+        message: 'No active subscriptions found for this masjid'
+      }, 'No subscribers to notify');
+    }
+
+    // Map category to user settings field
+    const categoryToSettingMap = {
+      'Prayer Times': 'prayer_times_notifications',
+      'Events': 'events_notifications',
+      'Donations': 'donations_notifications',
+      'General': 'general_notifications'
+    };
+
+    const settingField = categoryToSettingMap[category];
+
+    // Filter subscriptions by user preferences for this category
+    const validSubscriptions = subscriptions.filter(sub => {
+      if (sub.user_id) {
+        // Authenticated user - check settings
+        const settings = sub.user?.settings;
+        // If no settings exist, default to true (as per UserSettings model default)
+        return !settings || settings[settingField] === true;
+      } else {
+        // Anonymous user with device_id - include them (no preferences to check)
+        return true;
+      }
+    });
+
+    if (validSubscriptions.length === 0) {
+      logger.info(`No valid subscriptions with ${category} notifications enabled for masjid ${masjidId}`);
+      return responseHelper.success(res, {
+        sent: 0,
+        total: 0,
+        message: `No subscribers with ${category} notifications enabled`
       }, 'No subscribers to notify');
     }
 
     // Collect all FCM tokens
-    const fcmTokens = subscriptions
+    const fcmTokens = validSubscriptions
       .map(sub => sub.fcm_token)
       .filter(token => token && token.trim() !== '');
 
@@ -302,7 +347,6 @@ exports.sendPushNotification = async (req, res) => {
             {
               where: {
                 masjid_id: masjidId,
-                category: category,
                 fcm_token: { [Op.in]: invalidTokens }
               }
             }
@@ -335,25 +379,66 @@ exports.sendPushNotification = async (req, res) => {
  */
 async function sendNotificationsToSubscribers(masjid, notification) {
   try {
-    // Get all active subscriptions for this masjid and category
+    // Get all active subscriptions for this masjid (no category filter - one record per masjid)
     const subscriptions = await MasjidSubscription.findAll({
       where: {
         masjid_id: notification.masjid_id,
-        category: notification.category,
         is_active: true,
         fcm_token: { [Op.ne]: null }
-      }
+      },
+      include: [
+        {
+          model: User,
+          as: 'user',
+          required: false,
+          include: [
+            {
+              model: UserSettings,
+              as: 'settings',
+              required: false
+            }
+          ]
+        }
+      ]
     });
 
     if (subscriptions.length === 0) {
-      logger.info(`No active subscriptions with FCM tokens found for masjid ${notification.masjid_id}, category ${notification.category}`);
+      logger.info(`No active subscriptions with FCM tokens found for masjid ${notification.masjid_id}`);
       return;
     }
 
-    logger.info(`Sending push notifications to ${subscriptions.length} subscribers for masjid ${notification.masjid_id}, category ${notification.category}`);
+    // Map category to user settings field
+    const categoryToSettingMap = {
+      'Prayer Times': 'prayer_times_notifications',
+      'Events': 'events_notifications',
+      'Donations': 'donations_notifications',
+      'General': 'general_notifications'
+    };
+
+    const settingField = categoryToSettingMap[notification.category];
+
+    // Filter subscriptions by user preferences for this category
+    const validSubscriptions = subscriptions.filter(sub => {
+      if (sub.user_id) {
+        // Authenticated user - check settings
+        const settings = sub.user?.settings;
+        // If no settings exist, default to true (as per UserSettings model default)
+        return !settings || settings[settingField] === true;
+      } else {
+        // Anonymous user with device_id - include them (no preferences to check)
+        return true;
+      }
+    });
+
+    if (validSubscriptions.length === 0) {
+      logger.info(`No valid subscriptions with ${notification.category} notifications enabled for masjid ${notification.masjid_id}`);
+      return;
+    }
+
+    logger.info(`Sending push notifications to ${validSubscriptions.length} subscribers for masjid ${notification.masjid_id}, category ${notification.category}`);
 
     // Collect all FCM tokens
-    const fcmTokens = subscriptions
+    const fcmTokens = validSubscriptions
       .map(sub => sub.fcm_token)
       .filter(token => token && token.trim() !== '');
 
@@ -395,7 +480,6 @@ async function sendNotificationsToSubscribers(masjid, notification) {
             {
               where: {
                 masjid_id: notification.masjid_id,
-                category: notification.category,
                 fcm_token: { [Op.in]: invalidTokens }
               }
             }

@@ -34,9 +34,11 @@ module.exports = (sequelize) => {
       comment: 'Firebase Cloud Messaging token for push notifications'
     },
     // email field exists in database but is not used (kept for backward compatibility)
+    // category field is deprecated - category preferences are now stored in user_settings
+    // This field is kept nullable for backward compatibility
     category: {
       type: DataTypes.ENUM('Prayer Times', 'Donations', 'Events', 'General'),
-      allowNull: false,
+      allowNull: true,
       validate: {
         isIn: [['Prayer Times', 'Donations', 'Events', 'General']]
       }
