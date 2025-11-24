@@ -16,7 +16,7 @@ exports.updateProfileValidator = [
 exports.updateSettingsValidator = [
   body('prayer_times_notifications')
     .optional()
-    .isBoolean().withMessage('prayer_times_notifications must be a boolean'),
+    .isBoolean().withMessage('prayer_times_notifications must be a boolean.'),
   
   body('events_notifications')
     .optional()
