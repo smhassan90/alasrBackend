@@ -10,7 +10,7 @@ exports.updateProfileValidator = [
   body('phone')
     .optional()
     .trim()
-    .isMobilePhone().withMessage('Please provide a valid phone number.')
+    .isMobilePhone().withMessage('Please provide a valid phone number')
 ];
 
 exports.updateSettingsValidator = [
