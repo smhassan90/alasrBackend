@@ -1,5 +1,6 @@
 # Dependencies
 node_modules/
+al-asr-masajid-prayer-timings-firebase-adminsdk-fbsvc-f51b6a343a.json
 # package-lock.json - REMOVED: Vercel needs this to install dependencies correctly
 yarn.lock
 
