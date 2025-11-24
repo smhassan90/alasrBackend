@@ -12,6 +12,7 @@ const notificationRoutes = require('./notificationRoutes');
 const eventRoutes = require('./eventRoutes');
 const subscriptionRoutes = require('./subscriptionRoutes');
 const superAdminRoutes = require('./superAdminRoutes');
+const deviceSettingsRoutes = require('./deviceSettingsRoutes');
 
 // Health check endpoint
 router.get('/health', (req, res) => {
@@ -34,6 +35,7 @@ router.use('/notifications', notificationRoutes);
 router.use('/events', eventRoutes);
 router.use('/subscriptions', subscriptionRoutes);
 router.use('/super-admin', superAdminRoutes);
+router.use('/device-settings', deviceSettingsRoutes);
 
 module.exports = router;
 

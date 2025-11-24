@@ -1,4 +1,4 @@
-const { Notification, Masjid, User, MasjidSubscription, UserSettings } = require('../models');
+const { Notification, Masjid, User, MasjidSubscription, UserSettings, DeviceSettings } = require('../models');
 const responseHelper = require('../utils/responseHelper');
 const logger = require('../utils/logger');
 const pushNotificationService = require('../utils/pushNotificationService');
@@ -279,16 +279,36 @@ exports.sendPushNotification = async (req, res) => {
 
     const settingField = categoryToSettingMap[category];
 
-    // Filter subscriptions by user preferences for this category
+    // Get device settings for all anonymous subscriptions
+    const anonymousDeviceIds = subscriptions
+      .filter(sub => !sub.user_id && sub.device_id)
+      .map(sub => sub.device_id);
+    
+    const deviceSettingsMap = {};
+    if (anonymousDeviceIds.length > 0) {
+      const deviceSettings = await DeviceSettings.findAll({
+        where: { device_id: { [Op.in]: anonymousDeviceIds } }
+      });
+      deviceSettings.forEach(ds => {
+        deviceSettingsMap[ds.device_id] = ds;
+      });
+    }
+
+    // Filter subscriptions by user/device preferences for this category
     const validSubscriptions = subscriptions.filter(sub => {
       if (sub.user_id) {
-        // Authenticated user - check settings
+        // Authenticated user - check user settings
         const settings = sub.user?.settings;
         // If no settings exist, default to true (as per UserSettings model default)
         return !settings || settings[settingField] === true;
+      } else if (sub.device_id) {
+        // Anonymous user - check device settings
+        const deviceSettings = deviceSettingsMap[sub.device_id];
+        // If no settings exist, default to true (as per DeviceSettings model default)
+        return !deviceSettings || deviceSettings[settingField] === true;
       } else {
-        // Anonymous user with device_id - include them (no preferences to check)
-        return true;
+        // No user_id or device_id - skip
+        return false;
       }
     });
 
@@ -417,16 +437,36 @@ async function sendNotificationsToSubscribers(masjid, notification) {
 
     const settingField = categoryToSettingMap[notification.category];
 
-    // Filter subscriptions by user preferences for this category
+    // Get device settings for all anonymous subscriptions
+    const anonymousDeviceIds = subscriptions
+      .filter(sub => !sub.user_id && sub.device_id)
+      .map(sub => sub.device_id);
+    
+    const deviceSettingsMap = {};
+    if (anonymousDeviceIds.length > 0) {
+      const deviceSettings = await DeviceSettings.findAll({
+        where: { device_id: { [Op.in]: anonymousDeviceIds } }
+      });
+      deviceSettings.forEach(ds => {
+        deviceSettingsMap[ds.device_id] = ds;
+      });
+    }
+
+    // Filter subscriptions by user/device preferences for this category
     const validSubscriptions = subscriptions.filter(sub => {
       if (sub.user_id) {
-        // Authenticated user - check settings
+        // Authenticated user - check user settings
         const settings = sub.user?.settings;
         // If no settings exist, default to true (as per UserSettings model default)
         return !settings || settings[settingField] === true;
+      } else if (sub.device_id) {
+        // Anonymous user - check device settings
+        const deviceSettings = deviceSettingsMap[sub.device_id];
+        // If no settings exist, default to true (as per DeviceSettings model default)
+        return !deviceSettings || deviceSettings[settingField] === true;
       } else {
-        // Anonymous user with device_id - include them (no preferences to check)
-        return true;
+        // No user_id or device_id - skip
+        return false;
       }
     });
 

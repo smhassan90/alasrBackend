@@ -1,4 +1,4 @@
-const { PrayerTime, Masjid, User, MasjidSubscription, UserSettings, sequelize } = require('../models');
+const { PrayerTime, Masjid, User, MasjidSubscription, UserSettings, DeviceSettings, sequelize } = require('../models');
 const responseHelper = require('../utils/responseHelper');
 const logger = require('../utils/logger');
 const pushNotificationService = require('../utils/pushNotificationService');
@@ -325,18 +325,38 @@ async function sendPrayerTimeNotifications(masjid, prayerTime) {
       return;
     }
 
+    // Get device settings for all anonymous subscriptions
+    const anonymousDeviceIds = subscriptions
+      .filter(sub => !sub.user_id && sub.device_id)
+      .map(sub => sub.device_id);
+    
+    const deviceSettingsMap = {};
+    if (anonymousDeviceIds.length > 0) {
+      const deviceSettings = await DeviceSettings.findAll({
+        where: { device_id: { [Op.in]: anonymousDeviceIds } }
+      });
+      deviceSettings.forEach(ds => {
+        deviceSettingsMap[ds.device_id] = ds;
+      });
+    }
+
     // Filter subscriptions:
     // 1. For authenticated users: check if prayer_times_notifications is enabled
-    // 2. For anonymous users (device_id only): include them
+    // 2. For anonymous users: check device settings
     const validSubscriptions = subscriptions.filter(sub => {
       if (sub.user_id) {
-        // Authenticated user - check settings
+        // Authenticated user - check user settings
         const settings = sub.user?.settings;
         // If no settings exist, default to true (as per UserSettings model default)
         return !settings || settings.prayer_times_notifications === true;
+      } else if (sub.device_id) {
+        // Anonymous user - check device settings
+        const deviceSettings = deviceSettingsMap[sub.device_id];
+        // If no settings exist, default to true (as per DeviceSettings model default)
+        return !deviceSettings || deviceSettings.prayer_times_notifications === true;
       } else {
-        // Anonymous user with device_id - include them
-        return true;
+        // No user_id or device_id - skip
+        return false;
       }
     });
 
@@ -449,13 +469,34 @@ async function sendPrayerTimeBulkNotifications(masjid, prayerTimes) {
       return;
     }
 
+    // Get device settings for all anonymous subscriptions
+    const anonymousDeviceIds = subscriptions
+      .filter(sub => !sub.user_id && sub.device_id)
+      .map(sub => sub.device_id);
+    
+    const deviceSettingsMap = {};
+    if (anonymousDeviceIds.length > 0) {
+      const deviceSettings = await DeviceSettings.findAll({
+        where: { device_id: { [Op.in]: anonymousDeviceIds } }
+      });
+      deviceSettings.forEach(ds => {
+        deviceSettingsMap[ds.device_id] = ds;
+      });
+    }
+
     // Filter subscriptions
     const validSubscriptions = subscriptions.filter(sub => {
       if (sub.user_id) {
+        // Authenticated user - check user settings
         const settings = sub.user?.settings;
         return !settings || settings.prayer_times_notifications === true;
+      } else if (sub.device_id) {
+        // Anonymous user - check device settings
+        const deviceSettings = deviceSettingsMap[sub.device_id];
+        return !deviceSettings || deviceSettings.prayer_times_notifications === true;
       } else {
-        return true;
+        // No user_id or device_id - skip
+        return false;
       }
     });
 
