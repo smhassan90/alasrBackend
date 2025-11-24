@@ -26,21 +26,23 @@ exports.subscribe = async (req, res) => {
       return responseHelper.error(res, 'FCM token is required for push notifications', 400);
     }
 
-    // At least one identifier must be provided
-    if (!userId && !deviceId) {
-      return responseHelper.error(res, 'Either user authentication or deviceId is required', 400);
-    }
-
     // Build where clause for checking existing subscription (one record per masjid, no category)
     const whereClause = {
       masjid_id: masjidId
     };
 
-    if (userId) {
-      whereClause.user_id = userId;
-    } else if (deviceId) {
+    // Priority: If deviceId is explicitly provided in body, use it (for anonymous users)
+    // Otherwise, use userId from authentication token
+    if (deviceId) {
+      // For anonymous users, match device_id and ensure user_id is null
       whereClause.device_id = deviceId;
       whereClause.user_id = { [Op.is]: null };
+    } else if (userId) {
+      // For authenticated users, use userId
+      whereClause.user_id = userId;
+    } else {
+      // Neither deviceId nor userId provided
+      return responseHelper.error(res, 'Either user authentication or deviceId is required', 400);
     }
 
     // Check if subscription already exists
@@ -56,9 +58,10 @@ exports.subscribe = async (req, res) => {
     }
 
     // Create new subscription (no category - preferences stored in user_settings)
+    // Use deviceId if provided, otherwise use userId
     subscription = await MasjidSubscription.create({
       masjid_id: masjidId,
-      user_id: userId,
+      user_id: deviceId ? null : userId, // If deviceId provided, user_id should be null
       device_id: deviceId || null,
       fcm_token: fcmToken,
       category: null, // Category is deprecated - preferences stored in user_settings
@@ -84,9 +87,9 @@ exports.unsubscribe = async (req, res) => {
     const { masjidId, deviceId } = req.body;
     const userId = req.userId || null;
 
-    // At least one identifier must be provided
-    if (!userId && !deviceId) {
-      return responseHelper.error(res, 'Either user authentication or deviceId is required', 400);
+    // Validate masjidId
+    if (!masjidId) {
+      return responseHelper.error(res, 'Masjid ID is required', 400);
     }
 
     // Build where clause (one record per masjid, no category filter)
@@ -94,28 +97,56 @@ exports.unsubscribe = async (req, res) => {
       masjid_id: masjidId
     };
 
-    if (userId) {
-      whereClause.user_id = userId;
-    } else if (deviceId) {
+    // Priority: If deviceId is explicitly provided in body, use it (for anonymous users)
+    // Otherwise, use userId from authentication token
+    if (deviceId) {
+      // For anonymous users, match device_id and ensure user_id is null
       whereClause.device_id = deviceId;
       whereClause.user_id = { [Op.is]: null };
+    } else if (userId) {
+      // For authenticated users, use userId
+      whereClause.user_id = userId;
+    } else {
+      // Neither deviceId nor userId provided
+      return responseHelper.error(res, 'Either user authentication or deviceId is required', 400);
     }
 
-    const subscription = await MasjidSubscription.findOne({ where: whereClause });
+    logger.info(`Unsubscribe query - masjidId: ${masjidId}, deviceId: ${deviceId || 'N/A'}, userId: ${userId || 'N/A'}`);
+
+    // Try to find subscription - don't filter by is_active so we can find inactive ones too
+    const subscription = await MasjidSubscription.findOne({ 
+      where: whereClause
+    });
 
     if (!subscription) {
+      // Try to find any subscription for this masjid and device to help debug
+      const debugSub = await MasjidSubscription.findOne({
+        where: {
+          masjid_id: masjidId,
+          device_id: deviceId || { [Op.ne]: null }
+        }
+      });
+      
+      logger.warn(`Subscription not found. Debug - Found subscription: ${debugSub ? 'YES' : 'NO'}, masjidId: ${masjidId}, deviceId: ${deviceId || 'N/A'}, userId: ${userId || 'N/A'}`);
+      
       return responseHelper.notFound(res, 'Subscription not found');
+    }
+
+    // Check if already inactive
+    if (!subscription.is_active) {
+      logger.info(`Subscription already inactive for masjid ${masjidId}`);
+      return responseHelper.success(res, null, 'Already unsubscribed');
     }
 
     // Deactivate subscription instead of deleting
     subscription.is_active = false;
     await subscription.save();
 
-    logger.info(`Subscription deactivated for masjid ${masjidId}`);
+    logger.info(`Subscription deactivated for masjid ${masjidId}, subscription ID: ${subscription.id}`);
 
     return responseHelper.success(res, null, 'Unsubscribed successfully');
   } catch (error) {
-    logger.error(`Unsubscribe error: ${error.message}`);
+    logger.error(`Unsubscribe error: ${error.message}`, { error: error.stack, body: req.body });
     return responseHelper.error(res, 'Failed to unsubscribe', 500);
   }
 };
