@@ -25,14 +25,32 @@ const initializeFirebase = () => {
       serviceAccount = require(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
     }
 
+    // Validate required fields in service account
+    const requiredFields = ['project_id', 'private_key', 'client_email'];
+    const missingFields = requiredFields.filter(field => !serviceAccount[field]);
+    
+    if (missingFields.length > 0) {
+      logger.error(`Firebase service account is missing required fields: ${missingFields.join(', ')}`);
+      firebaseInitialized = false;
+      return;
+    }
+
+    // Check if Firebase app is already initialized
+    if (admin.apps.length > 0) {
+      logger.info('Firebase Admin SDK already initialized');
+      firebaseInitialized = true;
+      return;
+    }
+
     admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount)
+      credential: admin.credential.cert(serviceAccount),
+      projectId: serviceAccount.project_id
     });
 
     firebaseInitialized = true;
-    logger.info('Firebase Admin SDK initialized successfully');
+    logger.info(`Firebase Admin SDK initialized successfully for project: ${serviceAccount.project_id}`);
   } catch (error) {
-    logger.error(`Failed to initialize Firebase Admin SDK: ${error.message}`);
+    logger.error(`Failed to initialize Firebase Admin SDK: ${error.message}`, error);
     firebaseInitialized = false;
   }
 };
@@ -46,13 +64,31 @@ const initializeFirebase = () => {
  * @returns {Promise<Object>}
  */
 exports.sendPushNotification = async (fcmToken, title, body, data = {}) => {
+  // Ensure Firebase is initialized
   if (!firebaseInitialized) {
     initializeFirebase();
   }
 
+  // Double-check initialization after attempting to initialize
   if (!firebaseInitialized || !admin.apps.length) {
-    logger.warn('Firebase not initialized. Push notification not sent.');
-    return { success: false, error: 'Firebase not initialized' };
+    logger.error('Firebase not initialized. Cannot send push notification.');
+    return { 
+      success: false, 
+      error: 'Firebase not initialized. Please check your FIREBASE_SERVICE_ACCOUNT_KEY environment variable and ensure it contains all required fields (project_id, private_key, client_email).',
+      code: 'firebase_not_initialized'
+    };
+  }
+
+  // Verify messaging service is available
+  try {
+    admin.messaging();
+  } catch (error) {
+    logger.error(`Firebase messaging service not available: ${error.message}`);
+    return { 
+      success: false, 
+      error: `Firebase messaging service not available: ${error.message}`,
+      code: 'firebase_messaging_unavailable'
+    };
   }
 
   if (!fcmToken) {
@@ -89,7 +125,17 @@ exports.sendPushNotification = async (fcmToken, title, body, data = {}) => {
     logger.info(`Push notification sent successfully: ${response}`);
     return { success: true, messageId: response };
   } catch (error) {
-    logger.error(`Failed to send push notification: ${error.message}`);
+    logger.error(`Failed to send push notification: ${error.message}`, error);
+    
+    // Check for Firebase configuration errors (404 on /batch endpoint)
+    if (error.message && (error.message.includes('404') || error.message.includes('batch') || error.message.includes('Not Found'))) {
+      logger.error('Firebase configuration error detected. Please verify service account key has all required fields including project_id.');
+      return { 
+        success: false, 
+        error: 'Firebase configuration error: Service account may be missing required fields (project_id, private_key, client_email). Please verify your FIREBASE_SERVICE_ACCOUNT_KEY environment variable.',
+        code: 'firebase_config_error'
+      };
+    }
     
     // Handle invalid token errors
     if (error.code === 'messaging/invalid-registration-token' || 
@@ -111,13 +157,33 @@ exports.sendPushNotification = async (fcmToken, title, body, data = {}) => {
  * @returns {Promise<Object>}
  */
 exports.sendBatchPushNotifications = async (fcmTokens, title, body, data = {}) => {
+  // Ensure Firebase is initialized
   if (!firebaseInitialized) {
     initializeFirebase();
   }
 
+  // Double-check initialization after attempting to initialize
   if (!firebaseInitialized || !admin.apps.length) {
-    logger.warn('Firebase not initialized. Push notifications not sent.');
-    return { success: false, error: 'Firebase not initialized', results: [] };
+    logger.error('Firebase not initialized. Cannot send push notifications.');
+    return { 
+      success: false, 
+      error: 'Firebase not initialized. Please check your FIREBASE_SERVICE_ACCOUNT_KEY environment variable and ensure it contains all required fields (project_id, private_key, client_email).',
+      code: 'firebase_not_initialized',
+      results: [] 
+    };
+  }
+
+  // Verify messaging service is available
+  try {
+    admin.messaging();
+  } catch (error) {
+    logger.error(`Firebase messaging service not available: ${error.message}`);
+    return { 
+      success: false, 
+      error: `Firebase messaging service not available: ${error.message}`,
+      code: 'firebase_messaging_unavailable',
+      results: [] 
+    };
   }
 
   if (!fcmTokens || fcmTokens.length === 0) {
@@ -163,13 +229,39 @@ exports.sendBatchPushNotifications = async (fcmTokens, title, body, data = {}) =
     
     for (let i = 0; i < messages.length; i += batchSize) {
       const batch = messages.slice(i, i + batchSize);
-      const batchResponse = await admin.messaging().sendAll(batch);
       
-      results.push(...batchResponse.responses.map((response, index) => ({
-        token: batch[index].token,
-        success: response.success,
-        error: response.error
-      })));
+      try {
+        const batchResponse = await admin.messaging().sendAll(batch);
+        
+        results.push(...batchResponse.responses.map((response, index) => ({
+          token: batch[index].token,
+          success: response.success,
+          error: response.error
+        })));
+      } catch (batchError) {
+        // If batch send fails, mark all tokens in this batch as failed
+        logger.error(`Failed to send batch ${i / batchSize + 1}: ${batchError.message}`);
+        
+        // Check if it's a Firebase initialization/configuration error
+        if (batchError.message && (batchError.message.includes('404') || batchError.message.includes('batch'))) {
+          logger.error('Firebase configuration error detected. Please verify service account key has all required fields including project_id.');
+          return { 
+            success: false, 
+            error: 'Firebase configuration error: Service account may be missing required fields (project_id, private_key, client_email). Please verify your FIREBASE_SERVICE_ACCOUNT_KEY.',
+            code: 'firebase_config_error',
+            results: []
+          };
+        }
+        
+        // For other errors, mark all tokens in batch as failed
+        batch.forEach(msg => {
+          results.push({
+            token: msg.token,
+            success: false,
+            error: batchError.message
+          });
+        });
+      }
     }
 
     const successCount = results.filter(r => r.success).length;
@@ -185,9 +277,65 @@ exports.sendBatchPushNotifications = async (fcmTokens, title, body, data = {}) =
       results: results
     };
   } catch (error) {
-    logger.error(`Failed to send batch push notifications: ${error.message}`);
-    return { success: false, error: error.message, results: [] };
+    logger.error(`Failed to send batch push notifications: ${error.message}`, error);
+    
+    // Check for Firebase configuration errors
+    if (error.message && (error.message.includes('404') || error.message.includes('batch') || error.message.includes('Not Found'))) {
+      return { 
+        success: false, 
+        error: 'Firebase configuration error: Service account may be missing required fields (project_id, private_key, client_email). Please verify your FIREBASE_SERVICE_ACCOUNT_KEY environment variable.',
+        code: 'firebase_config_error',
+        results: []
+      };
+    }
+    
+    return { success: false, error: error.message, code: error.code, results: [] };
   }
+};
+
+/**
+ * Get Firebase initialization status
+ * @returns {Object} Status information about Firebase initialization
+ */
+exports.getFirebaseStatus = () => {
+  const firebaseKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
+  const status = {
+    initialized: firebaseInitialized,
+    appsCount: admin.apps.length,
+    envPresent: !!firebaseKey,
+    parsedJson: false,
+    hasRequiredFields: false,
+    missingFields: [],
+    projectId: null,
+    error: null
+  };
+
+  if (!firebaseKey) {
+    status.error = 'FIREBASE_SERVICE_ACCOUNT_KEY is missing from environment variables.';
+    return status;
+  }
+
+  // Try to parse the service account
+  let serviceAccount;
+  try {
+    serviceAccount = JSON.parse(firebaseKey);
+    status.parsedJson = true;
+  } catch (e) {
+    status.error = 'Failed to parse FIREBASE_SERVICE_ACCOUNT_KEY as JSON.';
+    return status;
+  }
+
+  // Check required fields
+  const requiredFields = ['project_id', 'private_key', 'client_email'];
+  status.missingFields = requiredFields.filter(field => !serviceAccount[field]);
+  status.hasRequiredFields = status.missingFields.length === 0;
+  status.projectId = serviceAccount.project_id || null;
+
+  if (status.missingFields.length > 0) {
+    status.error = `Missing required fields: ${status.missingFields.join(', ')}`;
+  }
+
+  return status;
 };
 
 // Initialize Firebase on module load

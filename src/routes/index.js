@@ -27,42 +27,32 @@ router.get('/health', (req, res) => {
 
 // Firebase configuration test endpoint
 router.get('/firebase/test', (req, res) => {
-  const firebaseKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
+  const pushNotificationService = require('../utils/pushNotificationService');
+  const firebaseStatus = pushNotificationService.getFirebaseStatus();
+  
   const response = {
-    success: !!firebaseKey,
-    envPresent: !!firebaseKey,
-    parsedJson: false,
-    fileExists: false,
+    success: firebaseStatus.initialized && firebaseStatus.hasRequiredFields,
+    envPresent: firebaseStatus.envPresent,
+    parsedJson: firebaseStatus.parsedJson,
+    initialized: firebaseStatus.initialized,
+    appsCount: firebaseStatus.appsCount,
+    hasRequiredFields: firebaseStatus.hasRequiredFields,
+    missingFields: firebaseStatus.missingFields,
+    projectId: firebaseStatus.projectId,
+    error: firebaseStatus.error,
     note: ''
   };
 
-  if (!firebaseKey) {
+  if (!firebaseStatus.envPresent) {
     response.note = 'FIREBASE_SERVICE_ACCOUNT_KEY is missing from environment variables.';
-    return res.status(200).json(response);
-  }
-
-  // Attempt to parse as JSON
-  try {
-    JSON.parse(firebaseKey);
-    response.parsedJson = true;
-    response.note = 'Service account key detected as inline JSON.';
-    return res.status(200).json(response);
-  } catch (error) {
-    response.parsedJson = false;
-  }
-
-  // If not JSON, treat as potential file path
-  try {
-    const filePath = firebaseKey.startsWith('./') ? firebaseKey : firebaseKey;
-    if (fs.existsSync(filePath)) {
-      response.fileExists = true;
-      response.note = `Service account key detected as file path (${filePath}).`;
-    } else {
-      response.fileExists = false;
-      response.note = `FIREBASE_SERVICE_ACCOUNT_KEY is set but file not found at path: ${filePath}`;
-    }
-  } catch (error) {
-    response.note = `Error while checking file path: ${error.message}`;
+  } else if (!firebaseStatus.parsedJson) {
+    response.note = 'Failed to parse FIREBASE_SERVICE_ACCOUNT_KEY as JSON.';
+  } else if (!firebaseStatus.hasRequiredFields) {
+    response.note = `Service account key is missing required fields: ${firebaseStatus.missingFields.join(', ')}. This is likely causing the 404 error on /batch endpoint.`;
+  } else if (!firebaseStatus.initialized) {
+    response.note = 'Service account key is valid but Firebase failed to initialize. Check logs for details.';
+  } else {
+    response.note = `Firebase initialized successfully for project: ${firebaseStatus.projectId}`;
   }
 
   return res.status(200).json(response);
