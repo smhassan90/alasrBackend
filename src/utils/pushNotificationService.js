@@ -199,6 +199,8 @@ exports.sendBatchPushNotifications = async (fcmTokens, title, body, data = {}) =
     return { success: false, error: 'No valid FCM tokens', results: [] };
   }
 
+  logger.info(`Attempting to send push notifications to ${validTokens.length} tokens`);
+
   try {
     const messages = validTokens.map(token => ({
       notification: {
@@ -231,34 +233,74 @@ exports.sendBatchPushNotifications = async (fcmTokens, title, body, data = {}) =
       const batch = messages.slice(i, i + batchSize);
       
       try {
+        logger.debug(`Sending batch of ${batch.length} messages to FCM`);
         const batchResponse = await admin.messaging().sendAll(batch);
         
         results.push(...batchResponse.responses.map((response, index) => ({
           token: batch[index].token,
           success: response.success,
-          error: response.error
+          error: response.error ? {
+            code: response.error.code,
+            message: response.error.message
+          } : null
         })));
       } catch (batchError) {
-        // If batch send fails, mark all tokens in this batch as failed
-        logger.error(`Failed to send batch ${i / batchSize + 1}: ${batchError.message}`);
+        // Log full error details for debugging
+        logger.error(`Failed to send batch ${i / batchSize + 1}:`, {
+          message: batchError.message,
+          code: batchError.code,
+          stack: batchError.stack,
+          error: batchError
+        });
         
-        // Check if it's a Firebase initialization/configuration error
-        if (batchError.message && (batchError.message.includes('404') || batchError.message.includes('batch'))) {
-          logger.error('Firebase configuration error detected. Please verify service account key has all required fields including project_id.');
+        // Check if it's a Firebase configuration error (404 on /batch endpoint specifically)
+        // Only catch the specific pattern: 404 error mentioning /batch endpoint
+        const errorMsg = batchError.message || '';
+        const isConfigError = (
+          (errorMsg.includes('404') && errorMsg.includes('/batch')) ||
+          (errorMsg.includes('Not Found') && errorMsg.includes('/batch')) ||
+          (errorMsg.includes('404') && errorMsg.includes('batch') && errorMsg.includes('URL')) ||
+          batchError.code === 'app/invalid-credential' ||
+          batchError.code === 'app/invalid-argument'
+        );
+        
+        if (isConfigError) {
+          logger.error('Firebase API error detected (404 on /batch endpoint):', {
+            message: batchError.message,
+            code: batchError.code,
+            fullError: batchError
+          });
+          
+          // Provide helpful error message (single line for JSON response)
+          const errorMessage = `Firebase Cloud Messaging API error: ${batchError.message}. Possible causes: 1) Cloud Messaging API not enabled for your Firebase project, 2) Service account lacks IAM permissions (needs "Firebase Cloud Messaging API Service Agent" role), 3) Project ID mismatch.`;
+          
           return { 
             success: false, 
-            error: 'Firebase configuration error: Service account may be missing required fields (project_id, private_key, client_email). Please verify your FIREBASE_SERVICE_ACCOUNT_KEY.',
-            code: 'firebase_config_error',
+            error: errorMessage,
+            code: batchError.code || 'firebase_api_error',
+            originalError: batchError.message,
+            details: {
+              code: batchError.code,
+              name: batchError.name
+            },
             results: []
           };
         }
+        
+        // Log the actual error for debugging
+        logger.error('Unexpected error during batch send:', {
+          message: batchError.message,
+          code: batchError.code,
+          name: batchError.name
+        });
         
         // For other errors, mark all tokens in batch as failed
         batch.forEach(msg => {
           results.push({
             token: msg.token,
             success: false,
-            error: batchError.message
+            error: batchError.message,
+            code: batchError.code
           });
         });
       }
@@ -277,19 +319,47 @@ exports.sendBatchPushNotifications = async (fcmTokens, title, body, data = {}) =
       results: results
     };
   } catch (error) {
-    logger.error(`Failed to send batch push notifications: ${error.message}`, error);
+    // Log full error details for debugging
+    logger.error(`Failed to send batch push notifications:`, {
+      message: error.message,
+      code: error.code,
+      stack: error.stack,
+      error: error
+    });
     
-    // Check for Firebase configuration errors
-    if (error.message && (error.message.includes('404') || error.message.includes('batch') || error.message.includes('Not Found'))) {
+    // Check for Firebase configuration errors (more specific check)
+    const errorMsg = error.message || '';
+    const isConfigError = (
+      (errorMsg.includes('404') && errorMsg.includes('/batch')) ||
+      (errorMsg.includes('Not Found') && errorMsg.includes('/batch')) ||
+      (errorMsg.includes('404') && errorMsg.includes('batch') && errorMsg.includes('URL')) ||
+      error.code === 'app/invalid-credential' ||
+      error.code === 'app/invalid-argument'
+    );
+    
+    if (isConfigError) {
+      const errorMessage = `Firebase Cloud Messaging API error: ${error.message}. Possible causes: 1) Cloud Messaging API not enabled for your Firebase project, 2) Service account lacks IAM permissions (needs "Firebase Cloud Messaging API Service Agent" role), 3) Project ID mismatch.`;
+      
       return { 
         success: false, 
-        error: 'Firebase configuration error: Service account may be missing required fields (project_id, private_key, client_email). Please verify your FIREBASE_SERVICE_ACCOUNT_KEY environment variable.',
-        code: 'firebase_config_error',
+        error: errorMessage,
+        code: error.code || 'firebase_api_error',
+        originalError: error.message,
+        details: {
+          code: error.code,
+          name: error.name
+        },
         results: []
       };
     }
     
-    return { success: false, error: error.message, code: error.code, results: [] };
+    return { 
+      success: false, 
+      error: error.message, 
+      code: error.code, 
+      originalError: error.message,
+      results: [] 
+    };
   }
 };
 
