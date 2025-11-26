@@ -202,7 +202,7 @@ exports.sendBatchPushNotifications = async (fcmTokens, title, body, data = {}) =
   logger.info(`Attempting to send push notifications to ${validTokens.length} tokens`);
 
   try {
-    const messages = validTokens.map(token => ({
+    const createMessage = token => ({
       notification: {
         title: title,
         body: body
@@ -223,85 +223,83 @@ exports.sendBatchPushNotifications = async (fcmTokens, title, body, data = {}) =
           'apns-priority': '10'
         }
       }
-    }));
+    });
 
-    // Send in batches (FCM allows up to 500 messages per batch)
-    const batchSize = 500;
+    // Send sequentially in manageable chunks to avoid /batch endpoint
+    const chunkSize = 100;
     const results = [];
     
-    for (let i = 0; i < messages.length; i += batchSize) {
-      const batch = messages.slice(i, i + batchSize);
-      
-      try {
-        logger.debug(`Sending batch of ${batch.length} messages to FCM`);
-        const batchResponse = await admin.messaging().sendAll(batch);
-        
-        results.push(...batchResponse.responses.map((response, index) => ({
-          token: batch[index].token,
-          success: response.success,
-          error: response.error ? {
-            code: response.error.code,
-            message: response.error.message
-          } : null
-        })));
-      } catch (batchError) {
-        // Log full error details for debugging
-        logger.error(`Failed to send batch ${i / batchSize + 1}:`, {
-          message: batchError.message,
-          code: batchError.code,
-          stack: batchError.stack,
-          error: batchError
-        });
-        
-        // Check if it's a Firebase configuration error (404 on /batch endpoint specifically)
-        // Only catch the specific pattern: 404 error mentioning /batch endpoint
-        const errorMsg = batchError.message || '';
-        const isConfigError = (
-          (errorMsg.includes('404') && errorMsg.includes('/batch')) ||
-          (errorMsg.includes('Not Found') && errorMsg.includes('/batch')) ||
-          (errorMsg.includes('404') && errorMsg.includes('batch') && errorMsg.includes('URL')) ||
-          batchError.code === 'app/invalid-credential' ||
-          batchError.code === 'app/invalid-argument'
-        );
-        
-        if (isConfigError) {
-          logger.error('Firebase API error detected (404 on /batch endpoint):', {
-            message: batchError.message,
-            code: batchError.code,
-            fullError: batchError
+    for (let i = 0; i < validTokens.length; i += chunkSize) {
+      const chunk = validTokens.slice(i, i + chunkSize);
+      logger.debug(`Sending chunk ${i / chunkSize + 1} (${chunk.length} tokens)`);
+
+      const chunkPromises = chunk.map(async token => {
+        const message = createMessage(token);
+
+        try {
+          const messageId = await admin.messaging().send(message);
+          return {
+            token,
+            success: true,
+            messageId
+          };
+        } catch (error) {
+          logger.error(`Failed to send notification to token ${token}: ${error.message}`, {
+            token,
+            code: error.code,
+            stack: error.stack
           });
+
+          // Identify auth/config errors once to return immediately
+          const errorMsg = error.message || '';
+          const isConfigError = (
+            (errorMsg.includes('404') && errorMsg.includes('/batch')) ||
+            (errorMsg.includes('Not Found') && errorMsg.includes('/batch')) ||
+            (errorMsg.includes('404') && errorMsg.includes('batch') && errorMsg.includes('URL')) ||
+            error.code === 'app/invalid-credential' ||
+            error.code === 'app/invalid-argument'
+          );
+
+          if (isConfigError) {
+            throw Object.assign(new Error(error.message), {
+              code: error.code || 'firebase_api_error',
+              originalError: error.message,
+              isConfigError: true
+            });
+          }
+
+          return {
+            token,
+            success: false,
+            error: {
+              code: error.code,
+              message: error.message
+            }
+          };
+        }
+      });
+
+      try {
+        const chunkResults = await Promise.all(chunkPromises);
+        results.push(...chunkResults);
+      } catch (chunkError) {
+        if (chunkError.isConfigError) {
+          const errorMessage = `Firebase Cloud Messaging API error: ${chunkError.message}. Possible causes: 1) Cloud Messaging API not enabled for your Firebase project, 2) Service account lacks IAM permissions (needs "Firebase Cloud Messaging API Service Agent" role), 3) Project ID mismatch.`;
           
-          // Provide helpful error message (single line for JSON response)
-          const errorMessage = `Firebase Cloud Messaging API error: ${batchError.message}. Possible causes: 1) Cloud Messaging API not enabled for your Firebase project, 2) Service account lacks IAM permissions (needs "Firebase Cloud Messaging API Service Agent" role), 3) Project ID mismatch.`;
-          
-          return { 
-            success: false, 
+          return {
+            success: false,
             error: errorMessage,
-            code: batchError.code || 'firebase_api_error',
-            originalError: batchError.message,
-            details: {
-              code: batchError.code,
-              name: batchError.name
-            },
+            code: chunkError.code,
+            originalError: chunkError.originalError,
             results: []
           };
         }
-        
-        // Log the actual error for debugging
-        logger.error('Unexpected error during batch send:', {
-          message: batchError.message,
-          code: batchError.code,
-          name: batchError.name
-        });
-        
-        // For other errors, mark all tokens in batch as failed
-        batch.forEach(msg => {
-          results.push({
-            token: msg.token,
-            success: false,
-            error: batchError.message,
-            code: batchError.code
-          });
+
+        // Unexpected rejection - log and continue
+        logger.error('Unexpected error while sending chunk:', {
+          message: chunkError.message,
+          code: chunkError.code,
+          stack: chunkError.stack
         });
       }
     }

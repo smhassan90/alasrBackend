@@ -52,7 +52,8 @@ router.get('/firebase/test', (req, res) => {
   } else if (!firebaseStatus.initialized) {
     response.note = 'Service account key is valid but Firebase failed to initialize. Check logs for details.';
   } else {
-    response.note = `Firebase initialized successfully for project: ${firebaseStatus.projectId}`;
+    response.note = `Firebase initialized successfully for project: ${firebaseStatus.projectId}. IMPORTANT: If you're getting 404 errors, make sure the Firebase Cloud Messaging API (HTTP v1) is enabled in Google Cloud Console. See ENABLE_FCM_API_GUIDE.md for instructions.`;
+    response.apiEnabledNote = 'To enable the API: Go to Google Cloud Console > APIs & Services > Library > Search "Firebase Cloud Messaging API" > Enable';
   }
 
   return res.status(200).json(response);
