@@ -3,6 +3,7 @@ const responseHelper = require('../utils/responseHelper');
 const emailService = require('../utils/emailService');
 const logger = require('../utils/logger');
 const pushNotificationService = require('../utils/pushNotificationService');
+const permissionChecker = require('../utils/permissionChecker');
 const { Op } = require('sequelize');
 const { generateDeviceId, isValidDeviceId } = require('../utils/deviceId');
 
@@ -331,6 +332,11 @@ exports.replyToQuestion = async (req, res) => {
     });
     if (!question) {
       return responseHelper.notFound(res, 'Question not found');
+    }
+
+    const hasPermission = await permissionChecker.canAnswerQuestions(req.userId, question.masjid_id);
+    if (!hasPermission) {
+      return responseHelper.forbidden(res, 'You do not have permission to answer questions for this masjid');
     }
 
     question.reply = reply;
