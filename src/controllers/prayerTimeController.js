@@ -106,8 +106,13 @@ exports.createPrayerTime = async (req, res) => {
 
     let prayerTimeRecord;
     const wasUpdate = !!existingPrayerTime;
+    let timeChanged = false;
 
     if (existingPrayerTime) {
+      // Check if prayer time actually changed
+      const oldTime = existingPrayerTime.prayer_time;
+      timeChanged = oldTime !== prayerTime;
+      
       // Update existing
       existingPrayerTime.prayer_time = prayerTime;
       existingPrayerTime.updated_by = req.userId;
@@ -119,7 +124,8 @@ exports.createPrayerTime = async (req, res) => {
       
       logger.info(`Prayer time updated: ${prayerName} for masjid ${masjidId} by ${req.userId}`);
     } else {
-      // Create new
+      // Create new - always notify for new prayer times
+      timeChanged = true;
       prayerTimeRecord = await PrayerTime.create({
         masjid_id: masjidId,
         prayer_name: prayerName,
@@ -132,8 +138,9 @@ exports.createPrayerTime = async (req, res) => {
       logger.info(`Prayer time created: ${prayerName} for masjid ${masjidId} by ${req.userId}`);
     }
 
-    // Send notifications if requested
-    if (prayerTimeRecord.notify_users) {
+    // Send notifications automatically when prayer time changes (only to subscribed users)
+    // The sendPrayerTimeNotifications function already filters by user preferences
+    if (timeChanged) {
       sendPrayerTimeNotifications(masjid, prayerTimeRecord).catch(err => {
         logger.error(`Failed to send prayer time notifications: ${err.message}`);
       });
@@ -165,7 +172,14 @@ exports.updatePrayerTime = async (req, res) => {
       return responseHelper.notFound(res, 'Prayer time not found');
     }
 
-    if (prayerTime) prayerTimeRecord.prayer_time = prayerTime;
+    // Check if prayer time actually changed
+    const oldTime = prayerTimeRecord.prayer_time;
+    let timeChanged = false;
+
+    if (prayerTime) {
+      timeChanged = oldTime !== prayerTime;
+      prayerTimeRecord.prayer_time = prayerTime;
+    }
     if (effectiveDate) prayerTimeRecord.effective_date = effectiveDate;
     if (notifyUsers !== undefined) prayerTimeRecord.notify_users = notifyUsers;
     prayerTimeRecord.updated_by = req.userId;
@@ -174,8 +188,9 @@ exports.updatePrayerTime = async (req, res) => {
 
     logger.info(`Prayer time ${id} updated by ${req.userId}`);
 
-    // Send notifications if requested
-    if (prayerTimeRecord.notify_users) {
+    // Send notifications automatically when prayer time changes (only to subscribed users)
+    // The sendPrayerTimeNotifications function already filters by user preferences
+    if (timeChanged) {
       sendPrayerTimeNotifications(prayerTimeRecord.masjid, prayerTimeRecord).catch(err => {
         logger.error(`Failed to send prayer time notifications: ${err.message}`);
       });
@@ -231,7 +246,7 @@ exports.bulkUpdatePrayerTimes = async (req, res) => {
     const date = effectiveDate || new Date().toISOString().split('T')[0];
 
     const createdPrayerTimes = [];
-    let shouldNotify = notifyUsers || false;
+    let hasChanges = false;
 
     for (const pt of prayerTimes) {
       // Check if exists
@@ -245,6 +260,10 @@ exports.bulkUpdatePrayerTimes = async (req, res) => {
       });
 
       if (existing) {
+        // Check if prayer time actually changed
+        if (existing.prayer_time !== pt.prayerTime) {
+          hasChanges = true;
+        }
         // Update
         existing.prayer_time = pt.prayerTime;
         existing.updated_by = req.userId;
@@ -254,7 +273,8 @@ exports.bulkUpdatePrayerTimes = async (req, res) => {
         await existing.save({ transaction });
         createdPrayerTimes.push(existing);
       } else {
-        // Create
+        // Create new - always notify for new prayer times
+        hasChanges = true;
         const newPrayerTime = await PrayerTime.create({
           masjid_id: masjidId,
           prayer_name: pt.prayerName,
@@ -271,8 +291,9 @@ exports.bulkUpdatePrayerTimes = async (req, res) => {
 
     logger.info(`Bulk prayer times updated for masjid ${masjidId} by ${req.userId}`);
 
-    // Send notifications if requested (only once for all prayer times)
-    if (shouldNotify) {
+    // Send notifications automatically when prayer times change (only to subscribed users)
+    // The sendPrayerTimeBulkNotifications function already filters by user preferences
+    if (hasChanges) {
       // Get masjid info for notification
       const masjidInfo = await Masjid.findByPk(masjidId);
       sendPrayerTimeBulkNotifications(masjidInfo, createdPrayerTimes).catch(err => {

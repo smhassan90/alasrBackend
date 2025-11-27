@@ -1,7 +1,8 @@
-const { Question, Masjid, User } = require('../models');
+const { Question, Masjid, User, UserMasjid, MasjidSubscription } = require('../models');
 const responseHelper = require('../utils/responseHelper');
 const emailService = require('../utils/emailService');
 const logger = require('../utils/logger');
+const pushNotificationService = require('../utils/pushNotificationService');
 const { Op } = require('sequelize');
 const { generateDeviceId, isValidDeviceId } = require('../utils/deviceId');
 
@@ -288,6 +289,11 @@ exports.setQuestions = async (req, res) => {
 
     logger.info(`New question submitted for masjid ${masjidId} by anonymous device ${uniqueDeviceId}`);
 
+    // Send push notifications to imams/admins for this masjid
+    sendQuestionNotificationToImams(masjid, newQuestion).catch(err =>
+      logger.error(`Failed to send question notification to imams: ${err.message}`)
+    );
+
     return responseHelper.success(res, newQuestion, 'Question submitted successfully', 201);
   } catch (error) {
     logger.error(`Set question error: ${error.message}`);
@@ -314,7 +320,15 @@ exports.replyToQuestion = async (req, res) => {
     const { id } = req.params;
     const { reply } = req.body;
 
-    const question = await Question.findByPk(id);
+    const question = await Question.findByPk(id, {
+      include: [
+        {
+          model: Masjid,
+          as: 'masjid',
+          attributes: ['id', 'name']
+        }
+      ]
+    });
     if (!question) {
       return responseHelper.notFound(res, 'Question not found');
     }
@@ -331,6 +345,11 @@ exports.replyToQuestion = async (req, res) => {
         logger.error(`Failed to send reply email: ${err.message}`)
       );
     }
+
+    // Send push notification to the user who asked the question
+    sendQuestionReplyNotification(question.masjid, question, reply).catch(err =>
+      logger.error(`Failed to send question reply notification: ${err.message}`)
+    );
 
     logger.info(`Question ${id} replied by ${req.userId}`);
 
@@ -417,4 +436,200 @@ exports.getQuestionStatistics = async (req, res) => {
     return responseHelper.error(res, 'Failed to retrieve statistics', 500);
   }
 };
+
+/**
+ * Send push notifications to imams/admins when a new question is submitted
+ * @param {Object} masjid - Masjid object
+ * @param {Object} question - Question object
+ */
+async function sendQuestionNotificationToImams(masjid, question) {
+  try {
+    // Find all imams and admins for this masjid
+    const imamsAndAdmins = await UserMasjid.findAll({
+      where: {
+        masjid_id: masjid.id,
+        role: { [Op.in]: ['imam', 'admin'] }
+      },
+      include: [
+        {
+          model: User,
+          as: 'user',
+          attributes: ['id', 'name', 'email']
+        }
+      ]
+    });
+
+    if (imamsAndAdmins.length === 0) {
+      logger.info(`No imams or admins found for masjid ${masjid.id}`);
+      return;
+    }
+
+    // Get user IDs of imams/admins
+    const userIds = imamsAndAdmins.map(ua => ua.user_id);
+
+    // Get FCM tokens for these users from MasjidSubscription
+    const subscriptions = await MasjidSubscription.findAll({
+      where: {
+        masjid_id: masjid.id,
+        user_id: { [Op.in]: userIds },
+        is_active: true,
+        fcm_token: { [Op.ne]: null }
+      }
+    });
+
+    if (subscriptions.length === 0) {
+      logger.info(`No active subscriptions with FCM tokens found for imams/admins of masjid ${masjid.id}`);
+      return;
+    }
+
+    // Collect all FCM tokens
+    const fcmTokens = subscriptions
+      .map(sub => sub.fcm_token)
+      .filter(token => token && token.trim() !== '');
+
+    if (fcmTokens.length === 0) {
+      logger.warn(`No valid FCM tokens found for imams/admins of masjid ${masjid.id}`);
+      return;
+    }
+
+    // Prepare notification message
+    const title = `New Question - ${masjid.name}`;
+    const body = `${question.user_name} asked: ${question.title}`;
+
+    // Prepare notification data
+    const notificationData = {
+      masjidId: masjid.id,
+      masjidName: masjid.name,
+      questionId: question.id,
+      questionTitle: question.title,
+      userName: question.user_name,
+      category: 'General',
+      type: 'new_question'
+    };
+
+    // Send push notifications in batch
+    const result = await pushNotificationService.sendBatchPushNotifications(
+      fcmTokens,
+      title,
+      body,
+      notificationData
+    );
+
+    if (result.success) {
+      logger.info(`Question notification sent to ${result.successful} imams/admins, ${result.failed} failed for masjid ${masjid.id}`);
+      
+      // Handle invalid tokens - deactivate subscriptions with invalid tokens
+      if (result.results && result.results.length > 0) {
+        const invalidTokens = result.results
+          .filter(r => !r.success && (r.error?.code === 'messaging/invalid-registration-token' || r.error?.code === 'messaging/registration-token-not-registered'))
+          .map(r => r.token);
+
+        if (invalidTokens.length > 0) {
+          await MasjidSubscription.update(
+            { is_active: false },
+            {
+              where: {
+                masjid_id: masjid.id,
+                fcm_token: { [Op.in]: invalidTokens }
+              }
+            }
+          );
+          logger.info(`Deactivated ${invalidTokens.length} subscriptions with invalid FCM tokens`);
+        }
+      }
+    } else {
+      logger.error(`Failed to send question notifications to imams/admins: ${result.error}`);
+    }
+  } catch (error) {
+    logger.error(`Error sending question notifications to imams/admins: ${error.message}`);
+    // Don't throw - we don't want to fail question creation if notification sending fails
+  }
+}
+
+/**
+ * Send push notification to user when their question is replied to
+ * @param {Object} masjid - Masjid object
+ * @param {Object} question - Question object
+ * @param {string} reply - Reply text
+ */
+async function sendQuestionReplyNotification(masjid, question, reply) {
+  try {
+    // Build where clause to find subscription
+    const subscriptionWhere = {
+      masjid_id: masjid.id,
+      is_active: true,
+      fcm_token: { [Op.ne]: null }
+    };
+
+    // Check if question was asked by authenticated user or anonymous user
+    if (question.user_id) {
+      // Authenticated user
+      subscriptionWhere.user_id = question.user_id;
+    } else if (question.device_id) {
+      // Anonymous user - match by device_id
+      subscriptionWhere.device_id = question.device_id;
+      subscriptionWhere.user_id = { [Op.is]: null };
+    } else {
+      logger.info(`Question ${question.id} has no user_id or device_id, cannot send notification`);
+      return;
+    }
+
+    // Find subscription with FCM token
+    const subscription = await MasjidSubscription.findOne({
+      where: subscriptionWhere
+    });
+
+    if (!subscription || !subscription.fcm_token) {
+      logger.info(`No active subscription with FCM token found for question ${question.id}`);
+      return;
+    }
+
+    // Prepare notification message
+    const title = `Reply to Your Question - ${masjid.name}`;
+    // Truncate reply if too long for notification body
+    const replyPreview = reply.length > 100 ? reply.substring(0, 100) + '...' : reply;
+    const body = `Your question "${question.title}" has been answered: ${replyPreview}`;
+
+    // Prepare notification data
+    const notificationData = {
+      masjidId: masjid.id,
+      masjidName: masjid.name,
+      questionId: question.id,
+      questionTitle: question.title,
+      category: 'General',
+      type: 'question_reply'
+    };
+
+    // Send push notification
+    const result = await pushNotificationService.sendPushNotification(
+      subscription.fcm_token,
+      title,
+      body,
+      notificationData
+    );
+
+    if (result.success) {
+      logger.info(`Question reply notification sent successfully for question ${question.id}`);
+    } else {
+      logger.error(`Failed to send question reply notification: ${result.error}`);
+      
+      // Handle invalid token - deactivate subscription
+      if (result.code === 'messaging/invalid-registration-token' || 
+          result.code === 'messaging/registration-token-not-registered') {
+        await MasjidSubscription.update(
+          { is_active: false },
+          {
+            where: {
+              id: subscription.id
+            }
+          }
+        );
+        logger.info(`Deactivated subscription with invalid FCM token for question ${question.id}`);
+      }
+    }
+  } catch (error) {
+    logger.error(`Error sending question reply notification: ${error.message}`);
+    // Don't throw - we don't want to fail reply if notification sending fails
+  }
+}
 
