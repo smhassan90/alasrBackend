@@ -570,84 +570,93 @@ async function sendQuestionNotificationToImams(masjid, question) {
  */
 async function sendQuestionReplyNotification(masjid, question, reply, replierName) {
   try {
-    if (!question.user_id && !question.device_id) {
+    // Get ALL active subscriptions for this masjid (similar to send-push endpoint)
+    const allSubscriptions = await MasjidSubscription.findAll({
+      where: {
+        masjid_id: masjid.id,
+        is_active: true,
+        fcm_token: { [Op.ne]: null }
+      },
+      include: [
+        {
+          model: User,
+          as: 'user',
+          required: false,
+          include: [
+            {
+              model: UserSettings,
+              as: 'settings',
+              required: false
+            }
+          ]
+        }
+      ]
+    });
+
+    if (allSubscriptions.length === 0) {
+      logger.info(`No active subscriptions with FCM tokens found for masjid ${masjid.id}`);
+      return;
+    }
+
+    // Get device settings for all anonymous subscriptions
+    const anonymousDeviceIds = allSubscriptions
+      .filter(sub => !sub.user_id && sub.device_id)
+      .map(sub => sub.device_id);
+    
+    const deviceSettingsMap = {};
+    if (anonymousDeviceIds.length > 0) {
+      const deviceSettings = await DeviceSettings.findAll({
+        where: { device_id: { [Op.in]: anonymousDeviceIds } }
+      });
+      deviceSettings.forEach(ds => {
+        deviceSettingsMap[ds.device_id] = ds;
+      });
+    }
+
+    // Filter subscriptions to find the one that matches the question's user
+    // If question has user_id, match by user_id
+    // If question has device_id, try to match by device_id, but also include all if no match
+    let targetSubscriptions = [];
+
+    if (question.user_id) {
+      // Match by user_id
+      targetSubscriptions = allSubscriptions.filter(sub => sub.user_id === question.user_id);
+    } else if (question.device_id) {
+      // Try to match by device_id first
+      targetSubscriptions = allSubscriptions.filter(sub => 
+        !sub.user_id && sub.device_id && sub.device_id === question.device_id
+      );
+      
+      // If no exact match, use all anonymous subscriptions (device_id might be stored differently)
+      // This ensures the user gets notified even if device_id format differs
+      if (targetSubscriptions.length === 0) {
+        logger.info(`No exact device_id match for question ${question.id}, using all anonymous subscriptions for masjid ${masjid.id}`);
+        targetSubscriptions = allSubscriptions.filter(sub => !sub.user_id && sub.device_id);
+      }
+    } else {
+      // No user_id or device_id - cannot send notification
       logger.info(`Question ${question.id} has no user_id or device_id, cannot send notification`);
       return;
     }
 
-    const baseWhere = {
-      is_active: true,
-      fcm_token: { [Op.ne]: null }
-    };
-
-    let subscriptions = [];
-
-    if (question.user_id) {
-      subscriptions = await MasjidSubscription.findAll({
-        where: {
-          ...baseWhere,
-          masjid_id: masjid.id,
-          user_id: question.user_id
-        },
-        include: [
-          {
-            model: User,
-            as: 'user',
-            required: false,
-            include: [
-              {
-                model: UserSettings,
-                as: 'settings',
-                required: false
-              }
-            ]
-          }
-        ]
-      });
-    } else if (question.device_id) {
-      subscriptions = await MasjidSubscription.findAll({
-        where: {
-          ...baseWhere,
-          masjid_id: masjid.id,
-          user_id: { [Op.is]: null },
-          device_id: question.device_id
-        }
-      });
-    }
-
-    // Fallback: use any subscriptions tied to this device across masajids (ensures notification even if user never subscribed to this masjid)
-    if ((!subscriptions || subscriptions.length === 0) && question.device_id) {
-      subscriptions = await MasjidSubscription.findAll({
-        where: {
-          ...baseWhere,
-          user_id: { [Op.is]: null },
-          device_id: question.device_id
-        }
-      });
-    }
-
-    if (!subscriptions || subscriptions.length === 0) {
-      logger.info(`No active subscriptions with FCM tokens found for question ${question.id}`);
+    if (targetSubscriptions.length === 0) {
+      logger.info(`No matching subscriptions found for question ${question.id}`);
       return;
     }
 
-    let deviceSettings = null;
-    if (!question.user_id && question.device_id) {
-      deviceSettings = await DeviceSettings.findOne({
-        where: { device_id: question.device_id }
-      });
-    }
-
-    const validSubscriptions = subscriptions.filter(sub => {
+    // Filter by user preferences for question notifications
+    const validSubscriptions = targetSubscriptions.filter(sub => {
       if (sub.user_id) {
+        // Authenticated user - check user settings
         const settings = sub.user?.settings;
+        // Default to true if no settings (as per UserSettings model default)
         return !settings || settings.questions_notifications !== false;
-      }
-
-      if (sub.device_id && question.device_id && sub.device_id === question.device_id) {
+      } else if (sub.device_id) {
+        // Anonymous user - check device settings
+        const deviceSettings = deviceSettingsMap[sub.device_id];
+        // Default to true if no settings (as per DeviceSettings model default)
         return !deviceSettings || deviceSettings.questions_notifications !== false;
       }
-
       return false;
     });
 
@@ -656,15 +665,19 @@ async function sendQuestionReplyNotification(masjid, question, reply, replierNam
       return;
     }
 
+    logger.info(`Found ${validSubscriptions.length} valid subscriptions for question ${question.id} (user_id: ${question.user_id || 'N/A'}, device_id: ${question.device_id || 'N/A'})`);
+
     // Collect FCM tokens, ensure uniqueness
     const fcmTokens = [...new Set(validSubscriptions
       .map(sub => sub.fcm_token)
       .filter(token => token && token.trim() !== ''))];
 
     if (fcmTokens.length === 0) {
-      logger.warn(`No valid FCM tokens found for question ${question.id}`);
+      logger.warn(`No valid FCM tokens found for question ${question.id} after filtering`);
       return;
     }
+
+    logger.info(`Sending question reply notification to ${fcmTokens.length} FCM tokens for question ${question.id}`);
 
     // Prepare notification message
     const title = `Reply to Your Question - ${masjid.name}`;
