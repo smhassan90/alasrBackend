@@ -1,4 +1,4 @@
-const { Question, Masjid, User, UserMasjid, MasjidSubscription } = require('../models');
+const { Question, Masjid, User, UserMasjid, MasjidSubscription, DeviceSettings, UserSettings } = require('../models');
 const responseHelper = require('../utils/responseHelper');
 const emailService = require('../utils/emailService');
 const logger = require('../utils/logger');
@@ -570,33 +570,99 @@ async function sendQuestionNotificationToImams(masjid, question) {
  */
 async function sendQuestionReplyNotification(masjid, question, reply, replierName) {
   try {
-    // Build where clause to find subscription
-    const subscriptionWhere = {
-      masjid_id: masjid.id,
-      is_active: true,
-      fcm_token: { [Op.ne]: null }
-    };
-
-    // Check if question was asked by authenticated user or anonymous user
-    if (question.user_id) {
-      // Authenticated user
-      subscriptionWhere.user_id = question.user_id;
-    } else if (question.device_id) {
-      // Anonymous user - match by device_id
-      subscriptionWhere.device_id = question.device_id;
-      subscriptionWhere.user_id = { [Op.is]: null };
-    } else {
+    if (!question.user_id && !question.device_id) {
       logger.info(`Question ${question.id} has no user_id or device_id, cannot send notification`);
       return;
     }
 
-    // Find subscription with FCM token
-    const subscription = await MasjidSubscription.findOne({
-      where: subscriptionWhere
+    const baseWhere = {
+      is_active: true,
+      fcm_token: { [Op.ne]: null }
+    };
+
+    let subscriptions = [];
+
+    if (question.user_id) {
+      subscriptions = await MasjidSubscription.findAll({
+        where: {
+          ...baseWhere,
+          masjid_id: masjid.id,
+          user_id: question.user_id
+        },
+        include: [
+          {
+            model: User,
+            as: 'user',
+            required: false,
+            include: [
+              {
+                model: UserSettings,
+                as: 'settings',
+                required: false
+              }
+            ]
+          }
+        ]
+      });
+    } else if (question.device_id) {
+      subscriptions = await MasjidSubscription.findAll({
+        where: {
+          ...baseWhere,
+          masjid_id: masjid.id,
+          user_id: { [Op.is]: null },
+          device_id: question.device_id
+        }
+      });
+    }
+
+    // Fallback: use any subscriptions tied to this device across masajids (ensures notification even if user never subscribed to this masjid)
+    if ((!subscriptions || subscriptions.length === 0) && question.device_id) {
+      subscriptions = await MasjidSubscription.findAll({
+        where: {
+          ...baseWhere,
+          user_id: { [Op.is]: null },
+          device_id: question.device_id
+        }
+      });
+    }
+
+    if (!subscriptions || subscriptions.length === 0) {
+      logger.info(`No active subscriptions with FCM tokens found for question ${question.id}`);
+      return;
+    }
+
+    let deviceSettings = null;
+    if (!question.user_id && question.device_id) {
+      deviceSettings = await DeviceSettings.findOne({
+        where: { device_id: question.device_id }
+      });
+    }
+
+    const validSubscriptions = subscriptions.filter(sub => {
+      if (sub.user_id) {
+        const settings = sub.user?.settings;
+        return !settings || settings.questions_notifications !== false;
+      }
+
+      if (sub.device_id && question.device_id && sub.device_id === question.device_id) {
+        return !deviceSettings || deviceSettings.questions_notifications !== false;
+      }
+
+      return false;
     });
 
-    if (!subscription || !subscription.fcm_token) {
-      logger.info(`No active subscription with FCM token found for question ${question.id}`);
+    if (validSubscriptions.length === 0) {
+      logger.info(`All subscriptions for question ${question.id} have questions notifications disabled`);
+      return;
+    }
+
+    // Collect FCM tokens, ensure uniqueness
+    const fcmTokens = [...new Set(validSubscriptions
+      .map(sub => sub.fcm_token)
+      .filter(token => token && token.trim() !== ''))];
+
+    if (fcmTokens.length === 0) {
+      logger.warn(`No valid FCM tokens found for question ${question.id}`);
       return;
     }
 
@@ -618,31 +684,35 @@ async function sendQuestionReplyNotification(masjid, question, reply, replierNam
     };
 
     // Send push notification
-    const result = await pushNotificationService.sendPushNotification(
-      subscription.fcm_token,
+    const result = await pushNotificationService.sendBatchPushNotifications(
+      fcmTokens,
       title,
       body,
       notificationData
     );
 
     if (result.success) {
-      logger.info(`Question reply notification sent successfully for question ${question.id}`);
+      logger.info(`Question reply notifications sent: ${result.successful} successful, ${result.failed} failed for question ${question.id}`);
+
+      if (result.results && result.results.length > 0) {
+        const invalidTokens = result.results
+          .filter(r => !r.success && (r.error?.code === 'messaging/invalid-registration-token' || r.error?.code === 'messaging/registration-token-not-registered'))
+          .map(r => r.token);
+
+        if (invalidTokens.length > 0) {
+          await MasjidSubscription.update(
+            { is_active: false },
+            {
+              where: {
+                fcm_token: { [Op.in]: invalidTokens }
+              }
+            }
+          );
+          logger.info(`Deactivated ${invalidTokens.length} subscriptions with invalid FCM tokens for question ${question.id}`);
+        }
+      }
     } else {
       logger.error(`Failed to send question reply notification: ${result.error}`);
-      
-      // Handle invalid token - deactivate subscription
-      if (result.code === 'messaging/invalid-registration-token' || 
-          result.code === 'messaging/registration-token-not-registered') {
-        await MasjidSubscription.update(
-          { is_active: false },
-          {
-            where: {
-              id: subscription.id
-            }
-          }
-        );
-        logger.info(`Deactivated subscription with invalid FCM token for question ${question.id}`);
-      }
     }
   } catch (error) {
     logger.error(`Error sending question reply notification: ${error.message}`);
