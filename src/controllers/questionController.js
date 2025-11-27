@@ -339,11 +339,21 @@ exports.replyToQuestion = async (req, res) => {
       return responseHelper.forbidden(res, 'You do not have permission to answer questions for this masjid');
     }
 
+    const replier = await User.findByPk(req.userId, {
+      attributes: ['id', 'name', 'email']
+    });
+    if (!replier) {
+      return responseHelper.forbidden(res, 'Replier not found');
+    }
+
     question.reply = reply;
     question.status = 'replied';
     question.replied_by = req.userId;
     question.replied_at = new Date();
     await question.save();
+
+    question.setDataValue('replier', replier);
+    question.setDataValue('replied_by_name', replier.name);
 
     // Send email notification if user provided email
     if (question.user_email) {
@@ -353,7 +363,7 @@ exports.replyToQuestion = async (req, res) => {
     }
 
     // Send push notification to the user who asked the question
-    sendQuestionReplyNotification(question.masjid, question, reply).catch(err =>
+    sendQuestionReplyNotification(question.masjid, question, reply, replier.name).catch(err =>
       logger.error(`Failed to send question reply notification: ${err.message}`)
     );
 
@@ -558,7 +568,7 @@ async function sendQuestionNotificationToImams(masjid, question) {
  * @param {Object} question - Question object
  * @param {string} reply - Reply text
  */
-async function sendQuestionReplyNotification(masjid, question, reply) {
+async function sendQuestionReplyNotification(masjid, question, reply, replierName) {
   try {
     // Build where clause to find subscription
     const subscriptionWhere = {
@@ -594,7 +604,7 @@ async function sendQuestionReplyNotification(masjid, question, reply) {
     const title = `Reply to Your Question - ${masjid.name}`;
     // Truncate reply if too long for notification body
     const replyPreview = reply.length > 100 ? reply.substring(0, 100) + '...' : reply;
-    const body = `Your question "${question.title}" has been answered: ${replyPreview}`;
+    const body = `Your question "${question.title}" has been answered by ${replierName || 'the imam'}: ${replyPreview}`;
 
     // Prepare notification data
     const notificationData = {
@@ -603,7 +613,8 @@ async function sendQuestionReplyNotification(masjid, question, reply) {
       questionId: question.id,
       questionTitle: question.title,
       category: 'General',
-      type: 'question_reply'
+      type: 'question_reply',
+      repliedByName: replierName || ''
     };
 
     // Send push notification
