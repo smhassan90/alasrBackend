@@ -96,11 +96,25 @@ exports.sendPushNotification = async (fcmToken, title, body, data = {}) => {
     return { success: false, error: 'FCM token is missing' };
   }
 
+  // Validate title and body are not empty - don't send notifications with empty titles
+  const trimmedTitle = (title || '').toString().trim();
+  const trimmedBody = (body || '').toString().trim();
+  
+  if (!trimmedTitle) {
+    logger.warn('Notification title is missing or empty. Push notification not sent.');
+    return { success: false, error: 'Notification title is required and cannot be empty' };
+  }
+  
+  if (!trimmedBody) {
+    logger.warn('Notification body is missing or empty. Push notification not sent.');
+    return { success: false, error: 'Notification body is required and cannot be empty' };
+  }
+
   try {
     const message = {
       notification: {
-        title: title,
-        body: body,
+        title: trimmedTitle,
+        body: trimmedBody,
         sound: 'default'
       },
       data: {
@@ -133,8 +147,8 @@ exports.sendPushNotification = async (fcmToken, title, body, data = {}) => {
             badge: 1,
             contentAvailable: true,
             alert: {
-              title: title,
-              body: body
+              title: trimmedTitle,
+              body: trimmedBody
             }
           }
         }
@@ -219,13 +233,27 @@ exports.sendBatchPushNotifications = async (fcmTokens, title, body, data = {}) =
     return { success: false, error: 'No valid FCM tokens', results: [] };
   }
 
+  // Validate title and body are not empty - don't send notifications with empty titles
+  const trimmedTitle = (title || '').toString().trim();
+  const trimmedBody = (body || '').toString().trim();
+  
+  if (!trimmedTitle) {
+    logger.warn('Notification title is missing or empty. Push notifications not sent.');
+    return { success: false, error: 'Notification title is required and cannot be empty', results: [] };
+  }
+  
+  if (!trimmedBody) {
+    logger.warn('Notification body is missing or empty. Push notifications not sent.');
+    return { success: false, error: 'Notification body is required and cannot be empty', results: [] };
+  }
+
   logger.info(`Attempting to send push notifications to ${validTokens.length} tokens`);
 
   try {
     const createMessage = token => ({
       notification: {
-        title: title,
-        body: body,
+        title: trimmedTitle,
+        body: trimmedBody,
         sound: 'default'
       },
       data: {
@@ -257,8 +285,8 @@ exports.sendBatchPushNotifications = async (fcmTokens, title, body, data = {}) =
             badge: 1,
             contentAvailable: true,
             alert: {
-              title: title,
-              body: body
+              title: trimmedTitle,
+              body: trimmedBody
             }
           }
         }
