@@ -100,7 +100,8 @@ exports.sendPushNotification = async (fcmToken, title, body, data = {}) => {
     const message = {
       notification: {
         title: title,
-        body: body
+        body: body,
+        sound: 'default'
       },
       data: {
         ...data,
@@ -112,11 +113,30 @@ exports.sendPushNotification = async (fcmToken, title, body, data = {}) => {
       },
       token: fcmToken,
       android: {
-        priority: 'high'
+        priority: 'high',
+        notification: {
+          sound: 'default',
+          channelId: 'default',
+          priority: 'high',
+          defaultSound: true,
+          defaultVibrateTimings: true,
+          visibility: 'public'
+        }
       },
       apns: {
         headers: {
           'apns-priority': '10'
+        },
+        payload: {
+          aps: {
+            sound: 'default',
+            badge: 1,
+            contentAvailable: true,
+            alert: {
+              title: title,
+              body: body
+            }
+          }
         }
       }
     };
@@ -205,7 +225,8 @@ exports.sendBatchPushNotifications = async (fcmTokens, title, body, data = {}) =
     const createMessage = token => ({
       notification: {
         title: title,
-        body: body
+        body: body,
+        sound: 'default'
       },
       data: {
         ...data,
@@ -216,11 +237,30 @@ exports.sendBatchPushNotifications = async (fcmTokens, title, body, data = {}) =
       },
       token: token,
       android: {
-        priority: 'high'
+        priority: 'high',
+        notification: {
+          sound: 'default',
+          channelId: 'default',
+          priority: 'high',
+          defaultSound: true,
+          defaultVibrateTimings: true,
+          visibility: 'public'
+        }
       },
       apns: {
         headers: {
           'apns-priority': '10'
+        },
+        payload: {
+          aps: {
+            sound: 'default',
+            badge: 1,
+            contentAvailable: true,
+            alert: {
+              title: title,
+              body: body
+            }
+          }
         }
       }
     });

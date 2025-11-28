@@ -4,6 +4,30 @@ const logger = require('../utils/logger');
 const pushNotificationService = require('../utils/pushNotificationService');
 const { Op } = require('sequelize');
 
+// Debounce mechanism to prevent duplicate notifications
+// Tracks the last notification time for each masjid (for individual updates only)
+const notificationDebounceMap = new Map();
+const INDIVIDUAL_UPDATE_DEBOUNCE_MS = 5000; // 5 seconds - prevent duplicate individual notifications within this window
+
+/**
+ * Check if an individual notification should be sent (debounce check)
+ * Note: Bulk updates should always send notifications and bypass this check
+ * @param {number} masjidId - Masjid ID
+ * @returns {boolean} - true if notification should be sent, false if debounced
+ */
+function shouldSendIndividualNotification(masjidId) {
+  const now = Date.now();
+  const lastNotificationTime = notificationDebounceMap.get(masjidId);
+  
+  if (!lastNotificationTime || (now - lastNotificationTime) >= INDIVIDUAL_UPDATE_DEBOUNCE_MS) {
+    notificationDebounceMap.set(masjidId, now);
+    return true;
+  }
+  
+  logger.info(`Individual notification for masjid ${masjidId} debounced (last sent ${Math.round((now - lastNotificationTime) / 1000)}s ago)`);
+  return false;
+}
+
 /**
  * Get all prayer times for a masjid
  * @route GET /api/prayer-times/masjid/:masjidId
@@ -318,6 +342,13 @@ exports.bulkUpdatePrayerTimes = async (req, res) => {
  */
 async function sendPrayerTimeNotifications(masjid, prayerTime) {
   try {
+    // Check debounce for individual updates - prevent duplicate notifications within the time window
+    // This prevents spam when multiple individual prayer times are updated quickly
+    if (!shouldSendIndividualNotification(masjid.id)) {
+      logger.info(`Skipping individual notification for masjid ${masjid.id} - within debounce window (use bulk update for multiple changes)`);
+      return;
+    }
+
     // Get all active subscriptions for this masjid (no category filter - one record per masjid)
     const subscriptions = await MasjidSubscription.findAll({
       where: {
@@ -462,6 +493,11 @@ async function sendPrayerTimeNotifications(masjid, prayerTime) {
  */
 async function sendPrayerTimeBulkNotifications(masjid, prayerTimes) {
   try {
+    // Bulk updates always send notifications - no debounce
+    // This ensures users always get notified about intentional bulk updates
+    // Also clears any individual update debounce to allow immediate notification
+    notificationDebounceMap.delete(masjid.id);
+
     // Get all active subscriptions for this masjid (no category filter - one record per masjid)
     const subscriptions = await MasjidSubscription.findAll({
       where: {
