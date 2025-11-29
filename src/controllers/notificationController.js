@@ -457,7 +457,8 @@ async function sendNotificationsToSubscribers(masjid, notification) {
     try {
       logger.info(`Executing subscription query for masjid ${notification.masjid_id}`);
       
-      // Try a simpler query first to see if includes are causing the issue
+      // Use a simpler query without nested includes to avoid hanging
+      // We'll fetch user settings separately if needed
       subscriptions = await MasjidSubscription.findAll({
         where: {
           masjid_id: notification.masjid_id,
@@ -469,22 +470,49 @@ async function sendNotificationsToSubscribers(masjid, notification) {
             model: User,
             as: 'user',
             required: false,
-            include: [
-              {
-                model: UserSettings,
-                as: 'settings',
-                required: false
-              }
-            ]
+            attributes: ['id', 'name', 'email'] // Only get essential fields
           }
         ],
         // Add query timeout at Sequelize level
-        timeout: queryTimeout
+        timeout: queryTimeout,
+        // Limit to prevent huge result sets
+        limit: 1000
       });
       
       clearTimeout(timeoutId);
       const queryDuration = Date.now() - queryStartTime;
       logger.info(`✅ Subscription query completed in ${queryDuration}ms: found ${subscriptions.length} subscriptions for masjid ${notification.masjid_id}`);
+      
+      // Now fetch user settings separately for authenticated users (faster than nested include)
+      const userIds = subscriptions
+        .filter(sub => sub.user_id)
+        .map(sub => sub.user_id)
+        .filter((id, index, self) => self.indexOf(id) === index); // Unique IDs
+      
+      let userSettingsMap = {};
+      if (userIds.length > 0) {
+        try {
+          const userSettings = await UserSettings.findAll({
+            where: { user_id: { [Op.in]: userIds } },
+            timeout: queryTimeout
+          });
+          userSettings.forEach(us => {
+            userSettingsMap[us.user_id] = us;
+          });
+          logger.info(`Fetched user settings for ${userSettings.length} users`);
+        } catch (settingsError) {
+          logger.warn(`Failed to fetch user settings: ${settingsError.message} - continuing without settings`);
+        }
+      }
+      
+      // Attach settings to subscriptions
+      subscriptions.forEach(sub => {
+        if (sub.user_id && userSettingsMap[sub.user_id]) {
+          if (!sub.user) sub.user = {};
+          sub.user.settings = userSettingsMap[sub.user_id];
+        }
+      });
+      
     } catch (queryError) {
       clearTimeout(timeoutId);
       const queryDuration = Date.now() - queryStartTime;
