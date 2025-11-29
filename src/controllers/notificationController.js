@@ -114,8 +114,17 @@ exports.createNotification = async (req, res) => {
     logger.info(`Notification created for masjid ${masjidId} by ${req.userId}`);
 
     // Send notifications to subscribers (async, don't wait)
-    sendNotificationsToSubscribers(masjid, notification).catch(err => {
-      logger.error(`Failed to send notifications to subscribers: ${err.message}`);
+    // In serverless environments, we need to ensure the promise is tracked
+    // Use setImmediate to ensure the response is sent first, then process notifications
+    setImmediate(() => {
+      sendNotificationsToSubscribers(masjid, notification).catch(err => {
+        logger.error(`Failed to send notifications to subscribers: ${err.message}`, {
+          notificationId: notification.id,
+          masjidId: masjidId,
+          error: err.message,
+          stack: err.stack
+        });
+      });
     });
 
     return responseHelper.success(res, notificationWithCreator, 'Notification created successfully', 201);
@@ -437,8 +446,10 @@ async function sendNotificationsToSubscribers(masjid, notification) {
     // Get all active subscriptions for this masjid (no category filter - one record per masjid)
     logger.info(`Querying subscriptions for masjid ${notification.masjid_id}, category ${notification.category}`);
     let subscriptions;
+    const queryStartTime = Date.now();
     try {
-      subscriptions = await MasjidSubscription.findAll({
+      // Add a timeout wrapper for the query
+      const queryPromise = MasjidSubscription.findAll({
         where: {
           masjid_id: notification.masjid_id,
           is_active: true,
@@ -459,11 +470,22 @@ async function sendNotificationsToSubscribers(masjid, notification) {
           }
         ]
       });
-      logger.info(`Subscription query completed: found ${subscriptions.length} subscriptions for masjid ${notification.masjid_id}`);
+      
+      // Add a 10 second timeout to the query
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Subscription query timeout after 10 seconds')), 10000);
+      });
+      
+      subscriptions = await Promise.race([queryPromise, timeoutPromise]);
+      const queryDuration = Date.now() - queryStartTime;
+      logger.info(`Subscription query completed in ${queryDuration}ms: found ${subscriptions.length} subscriptions for masjid ${notification.masjid_id}`);
     } catch (queryError) {
-      logger.error(`Error querying subscriptions for masjid ${notification.masjid_id}: ${queryError.message}`, {
+      const queryDuration = Date.now() - queryStartTime;
+      logger.error(`Error querying subscriptions for masjid ${notification.masjid_id} after ${queryDuration}ms: ${queryError.message}`, {
         error: queryError.message,
-        stack: queryError.stack
+        stack: queryError.stack,
+        notificationId: notification.id,
+        masjidId: notification.masjid_id
       });
       throw queryError;
     }
