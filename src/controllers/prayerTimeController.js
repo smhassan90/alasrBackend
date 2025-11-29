@@ -436,16 +436,29 @@ async function sendPrayerTimeNotifications(masjid, prayerTime) {
     const title = `Prayer Time Updated - ${masjid.name}`;
     const body = `${prayerTime.prayer_name} prayer time has been updated to ${prayerTimeStr}`;
 
-    // Prepare notification data
+    // Prepare notification data (all values must be strings for FCM)
+    const effectiveDateStr = prayerTime.effective_date 
+      ? (typeof prayerTime.effective_date === 'string' 
+          ? prayerTime.effective_date 
+          : prayerTime.effective_date.toISOString().split('T')[0])
+      : '';
+    
     const notificationData = {
-      masjidId: masjid.id,
-      masjidName: masjid.name,
-      prayerName: prayerTime.prayer_name,
-      prayerTime: prayerTimeStr,
-      effectiveDate: prayerTime.effective_date,
+      masjidId: String(masjid.id),
+      masjidName: String(masjid.name),
+      prayerName: String(prayerTime.prayer_name || ''),
+      prayerTime: String(prayerTimeStr),
+      effectiveDate: effectiveDateStr,
       category: 'Prayer Times',
       type: 'prayer_time_update'
     };
+
+    logger.info(`Sending prayer time notification with data:`, {
+      title,
+      body,
+      fcmTokensCount: fcmTokens.length,
+      masjidId: masjid.id
+    });
 
     // Send push notifications in batch
     const result = await pushNotificationService.sendBatchPushNotifications(
@@ -457,6 +470,18 @@ async function sendPrayerTimeNotifications(masjid, prayerTime) {
 
     if (result.success) {
       logger.info(`Prayer time push notifications sent: ${result.successful} successful, ${result.failed} failed for masjid ${masjid.id}`);
+      
+      // Log detailed error information for failed notifications
+      if (result.failed > 0 && result.results) {
+        const failedResults = result.results.filter(r => !r.success);
+        logger.warn(`Prayer time notification failures for masjid ${masjid.id}:`, {
+          totalFailed: failedResults.length,
+          errors: failedResults.map(r => ({
+            code: r.error?.code || 'unknown',
+            message: r.error?.message || r.error || 'Unknown error'
+          }))
+        });
+      }
       
       // Handle invalid tokens - deactivate subscriptions with invalid tokens
       if (result.results && result.results.length > 0) {
@@ -478,10 +503,19 @@ async function sendPrayerTimeNotifications(masjid, prayerTime) {
         }
       }
     } else {
-      logger.error(`Failed to send prayer time push notifications: ${result.error}`);
+      logger.error(`Failed to send prayer time push notifications for masjid ${masjid.id}: ${result.error}`, {
+        masjidId: masjid.id,
+        code: result.code,
+        error: result.error,
+        originalError: result.originalError
+      });
     }
   } catch (error) {
-    logger.error(`Error sending prayer time notifications: ${error.message}`);
+    logger.error(`Error sending prayer time notifications for masjid ${masjid.id}: ${error.message}`, {
+      masjidId: masjid.id,
+      error: error.message,
+      stack: error.stack
+    });
     // Don't throw - we don't want to fail prayer time update if notification sending fails
   }
 }

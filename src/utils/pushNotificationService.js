@@ -248,7 +248,11 @@ exports.sendBatchPushNotifications = async (fcmTokens, title, body, data = {}) =
     return { success: false, error: 'Notification body is required and cannot be empty', results: [] };
   }
 
-  logger.info(`Attempting to send push notifications to ${validTokens.length} tokens`);
+  logger.info(`Attempting to send push notifications to ${validTokens.length} tokens`, {
+    title: trimmedTitle,
+    body: trimmedBody.substring(0, 50) + (trimmedBody.length > 50 ? '...' : ''),
+    dataKeys: Object.keys(data)
+  });
 
   try {
     const createMessage = token => ({
@@ -378,7 +382,7 @@ exports.sendBatchPushNotifications = async (fcmTokens, title, body, data = {}) =
     const successCount = results.filter(r => r.success).length;
     const failureCount = results.filter(r => !r.success).length;
     
-    // Log summary of failures by error type
+    // Always log the result
     if (failureCount > 0) {
       const errorSummary = {};
       results.filter(r => !r.success).forEach(r => {
@@ -386,8 +390,17 @@ exports.sendBatchPushNotifications = async (fcmTokens, title, body, data = {}) =
         errorSummary[errorCode] = (errorSummary[errorCode] || 0) + 1;
       });
       logger.warn(`Batch push notifications completed: ${successCount} successful, ${failureCount} failed. Error breakdown:`, errorSummary);
+      
+      // Log first few error details for debugging
+      const failedResults = results.filter(r => !r.success).slice(0, 3);
+      failedResults.forEach((r, idx) => {
+        logger.warn(`Failed notification ${idx + 1}:`, {
+          code: r.error?.code || 'unknown',
+          message: r.error?.message || r.error || 'Unknown error'
+        });
+      });
     } else {
-      logger.info(`Batch push notifications sent: ${successCount} successful, ${failureCount} failed`);
+      logger.info(`Batch push notifications sent successfully: ${successCount} successful, ${failureCount} failed`);
     }
     
     return { 
