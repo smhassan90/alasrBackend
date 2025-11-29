@@ -316,13 +316,21 @@ exports.sendPushNotification = async (req, res) => {
       if (sub.user_id) {
         // Authenticated user - check user settings
         const settings = sub.user?.settings;
-        // If no settings exist, default to true (as per UserSettings model default)
-        return !settings || settings[settingField] === true;
+        // Default to true if no settings exist or if the field is null/undefined (as per UserSettings model default)
+        // Only disable if explicitly set to false
+        if (settings && settings[settingField] !== undefined && settings[settingField] !== null) {
+          return settings[settingField] === true;
+        }
+        return true; // Default enabled
       } else if (sub.device_id) {
         // Anonymous user - check device settings
         const deviceSettings = deviceSettingsMap[sub.device_id];
-        // If no settings exist, default to true (as per DeviceSettings model default)
-        return !deviceSettings || deviceSettings[settingField] === true;
+        // Default to true if no settings exist or if the field is null/undefined (as per DeviceSettings model default)
+        // Only disable if explicitly set to false
+        if (deviceSettings && deviceSettings[settingField] !== undefined && deviceSettings[settingField] !== null) {
+          return deviceSettings[settingField] === true;
+        }
+        return true; // Default enabled
       } else {
         // No user_id or device_id - skip
         return false;
@@ -576,34 +584,57 @@ async function sendNotificationsToSubscribers(masjid, notification) {
     }
 
     // Filter subscriptions by user/device preferences for this category
-    logger.info(`Filtering ${subscriptions.length} subscriptions by preferences for category ${notification.category}`);
+    logger.info(`Filtering ${subscriptions.length} subscriptions by preferences for category ${notification.category} (setting field: ${settingField})`);
     const validSubscriptions = subscriptions.filter(sub => {
       if (sub.user_id) {
         // Authenticated user - check user settings
         const settings = sub.user?.settings;
-        // If no settings exist, default to true (as per UserSettings model default)
-        const isEnabled = !settings || settings[settingField] === true;
+        // Default to true if no settings exist or if the field is null/undefined (as per UserSettings model default)
+        let isEnabled = true;
+        if (settings && settings[settingField] !== undefined && settings[settingField] !== null) {
+          isEnabled = settings[settingField] === true;
+        }
+        
         if (!isEnabled) {
-          logger.debug(`Subscription ${sub.id} filtered out: user ${sub.user_id} has ${settingField} = false`);
+          logger.info(`Subscription ${sub.id} filtered out: user ${sub.user_id} has ${settingField} = ${settings[settingField]} (explicitly false)`);
+        } else {
+          logger.debug(`Subscription ${sub.id} passed filter: user ${sub.user_id} has ${settingField} = ${settings && settings[settingField] !== undefined ? settings[settingField] : 'default (true)'}`);
         }
         return isEnabled;
       } else if (sub.device_id) {
         // Anonymous user - check device settings
         const deviceSettings = deviceSettingsMap[sub.device_id];
-        // If no settings exist, default to true (as per DeviceSettings model default)
-        const isEnabled = !deviceSettings || deviceSettings[settingField] === true;
+        // Default to true if no settings exist or if the field is null/undefined (as per DeviceSettings model default)
+        let isEnabled = true;
+        if (deviceSettings && deviceSettings[settingField] !== undefined && deviceSettings[settingField] !== null) {
+          isEnabled = deviceSettings[settingField] === true;
+        }
+        
         if (!isEnabled) {
-          logger.debug(`Subscription ${sub.id} filtered out: device ${sub.device_id} has ${settingField} = false`);
+          logger.info(`Subscription ${sub.id} filtered out: device ${sub.device_id} has ${settingField} = ${deviceSettings[settingField]} (explicitly false)`);
+        } else {
+          logger.debug(`Subscription ${sub.id} passed filter: device ${sub.device_id} has ${settingField} = ${deviceSettings && deviceSettings[settingField] !== undefined ? deviceSettings[settingField] : 'default (true)'}`);
         }
         return isEnabled;
       } else {
         // No user_id or device_id - skip
-        logger.debug(`Subscription ${sub.id} filtered out: no user_id or device_id`);
+        logger.info(`Subscription ${sub.id} filtered out: no user_id or device_id`);
         return false;
       }
     });
     
-    logger.info(`After filtering: ${validSubscriptions.length} valid subscriptions out of ${subscriptions.length} total`);
+    logger.info(`After filtering: ${validSubscriptions.length} valid subscriptions out of ${subscriptions.length} total for category ${notification.category}`);
+    
+    // Log details about filtered subscriptions
+    if (validSubscriptions.length === 0 && subscriptions.length > 0) {
+      logger.warn(`All ${subscriptions.length} subscriptions were filtered out for category ${notification.category}. Checking why:`, {
+        category: notification.category,
+        settingField: settingField,
+        subscriptionsWithSettings: subscriptions.filter(s => s.user_id && s.user?.settings).length,
+        subscriptionsWithoutSettings: subscriptions.filter(s => s.user_id && !s.user?.settings).length,
+        anonymousSubscriptions: subscriptions.filter(s => !s.user_id).length
+      });
+    }
 
     if (validSubscriptions.length === 0) {
       logger.warn(`No valid subscriptions with ${notification.category} notifications enabled for masjid ${notification.masjid_id} (had ${subscriptions.length} total subscriptions)`);
