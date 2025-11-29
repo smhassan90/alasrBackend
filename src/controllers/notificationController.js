@@ -435,27 +435,38 @@ async function sendNotificationsToSubscribers(masjid, notification) {
     logger.info(`Starting notification sending for notification ${notification.id}, masjid ${notification.masjid_id}, category ${notification.category}`);
     
     // Get all active subscriptions for this masjid (no category filter - one record per masjid)
-    const subscriptions = await MasjidSubscription.findAll({
-      where: {
-        masjid_id: notification.masjid_id,
-        is_active: true,
-        fcm_token: { [Op.ne]: null }
-      },
-      include: [
-        {
-          model: User,
-          as: 'user',
-          required: false,
-          include: [
-            {
-              model: UserSettings,
-              as: 'settings',
-              required: false
-            }
-          ]
-        }
-      ]
-    });
+    logger.info(`Querying subscriptions for masjid ${notification.masjid_id}, category ${notification.category}`);
+    let subscriptions;
+    try {
+      subscriptions = await MasjidSubscription.findAll({
+        where: {
+          masjid_id: notification.masjid_id,
+          is_active: true,
+          fcm_token: { [Op.ne]: null }
+        },
+        include: [
+          {
+            model: User,
+            as: 'user',
+            required: false,
+            include: [
+              {
+                model: UserSettings,
+                as: 'settings',
+                required: false
+              }
+            ]
+          }
+        ]
+      });
+      logger.info(`Subscription query completed: found ${subscriptions.length} subscriptions for masjid ${notification.masjid_id}`);
+    } catch (queryError) {
+      logger.error(`Error querying subscriptions for masjid ${notification.masjid_id}: ${queryError.message}`, {
+        error: queryError.message,
+        stack: queryError.stack
+      });
+      throw queryError;
+    }
 
     logger.info(`Found ${subscriptions.length} active subscriptions with FCM tokens for masjid ${notification.masjid_id}`);
 
@@ -473,6 +484,13 @@ async function sendNotificationsToSubscribers(masjid, notification) {
     };
 
     const settingField = categoryToSettingMap[notification.category];
+    
+    if (!settingField) {
+      logger.error(`Unknown category ${notification.category} for notification ${notification.id}`);
+      return;
+    }
+    
+    logger.info(`Using setting field: ${settingField} for category: ${notification.category}`);
 
     // Get device settings for all anonymous subscriptions
     const anonymousDeviceIds = subscriptions
@@ -490,22 +508,34 @@ async function sendNotificationsToSubscribers(masjid, notification) {
     }
 
     // Filter subscriptions by user/device preferences for this category
+    logger.info(`Filtering ${subscriptions.length} subscriptions by preferences for category ${notification.category}`);
     const validSubscriptions = subscriptions.filter(sub => {
       if (sub.user_id) {
         // Authenticated user - check user settings
         const settings = sub.user?.settings;
         // If no settings exist, default to true (as per UserSettings model default)
-        return !settings || settings[settingField] === true;
+        const isEnabled = !settings || settings[settingField] === true;
+        if (!isEnabled) {
+          logger.debug(`Subscription ${sub.id} filtered out: user ${sub.user_id} has ${settingField} = false`);
+        }
+        return isEnabled;
       } else if (sub.device_id) {
         // Anonymous user - check device settings
         const deviceSettings = deviceSettingsMap[sub.device_id];
         // If no settings exist, default to true (as per DeviceSettings model default)
-        return !deviceSettings || deviceSettings[settingField] === true;
+        const isEnabled = !deviceSettings || deviceSettings[settingField] === true;
+        if (!isEnabled) {
+          logger.debug(`Subscription ${sub.id} filtered out: device ${sub.device_id} has ${settingField} = false`);
+        }
+        return isEnabled;
       } else {
         // No user_id or device_id - skip
+        logger.debug(`Subscription ${sub.id} filtered out: no user_id or device_id`);
         return false;
       }
     });
+    
+    logger.info(`After filtering: ${validSubscriptions.length} valid subscriptions out of ${subscriptions.length} total`);
 
     if (validSubscriptions.length === 0) {
       logger.warn(`No valid subscriptions with ${notification.category} notifications enabled for masjid ${notification.masjid_id} (had ${subscriptions.length} total subscriptions)`);
