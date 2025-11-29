@@ -113,6 +113,14 @@ exports.createNotification = async (req, res) => {
 
     logger.info(`Notification created for masjid ${masjidId} by ${req.userId}`);
 
+    // Skip sending push notifications for "Prayer Times" category
+    // Prayer time updates already send push notifications directly via sendPrayerTimeNotifications
+    // Creating a Notification record for prayer times is just for record-keeping, not for sending duplicate notifications
+    if (category === 'Prayer Times') {
+      logger.info(`Skipping push notification for Prayer Times category - prayer time updates send notifications directly`);
+      return responseHelper.success(res, notificationWithCreator, 'Notification created successfully (push notification skipped for Prayer Times)', 201);
+    }
+
     // Send notifications to subscribers (async, don't wait)
     // In serverless environments, we need to ensure the promise is tracked
     // Use setImmediate to ensure the response is sent first, then process notifications
