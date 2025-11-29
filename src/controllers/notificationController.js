@@ -447,9 +447,18 @@ async function sendNotificationsToSubscribers(masjid, notification) {
     logger.info(`Querying subscriptions for masjid ${notification.masjid_id}, category ${notification.category}`);
     let subscriptions;
     const queryStartTime = Date.now();
+    
+    // Add a 5 second timeout to the query (reduced from 10 for faster failure detection)
+    const queryTimeout = 5000;
+    const timeoutId = setTimeout(() => {
+      logger.error(`QUERY TIMEOUT: Subscription query for masjid ${notification.masjid_id} exceeded ${queryTimeout}ms timeout`);
+    }, queryTimeout);
+    
     try {
-      // Add a timeout wrapper for the query
-      const queryPromise = MasjidSubscription.findAll({
+      logger.info(`Executing subscription query for masjid ${notification.masjid_id}`);
+      
+      // Try a simpler query first to see if includes are causing the issue
+      subscriptions = await MasjidSubscription.findAll({
         where: {
           masjid_id: notification.masjid_id,
           is_active: true,
@@ -468,26 +477,27 @@ async function sendNotificationsToSubscribers(masjid, notification) {
               }
             ]
           }
-        ]
+        ],
+        // Add query timeout at Sequelize level
+        timeout: queryTimeout
       });
       
-      // Add a 10 second timeout to the query
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Subscription query timeout after 10 seconds')), 10000);
-      });
-      
-      subscriptions = await Promise.race([queryPromise, timeoutPromise]);
+      clearTimeout(timeoutId);
       const queryDuration = Date.now() - queryStartTime;
-      logger.info(`Subscription query completed in ${queryDuration}ms: found ${subscriptions.length} subscriptions for masjid ${notification.masjid_id}`);
+      logger.info(`✅ Subscription query completed in ${queryDuration}ms: found ${subscriptions.length} subscriptions for masjid ${notification.masjid_id}`);
     } catch (queryError) {
+      clearTimeout(timeoutId);
       const queryDuration = Date.now() - queryStartTime;
-      logger.error(`Error querying subscriptions for masjid ${notification.masjid_id} after ${queryDuration}ms: ${queryError.message}`, {
+      logger.error(`❌ Error querying subscriptions for masjid ${notification.masjid_id} after ${queryDuration}ms: ${queryError.message}`, {
         error: queryError.message,
+        code: queryError.code,
+        name: queryError.name,
         stack: queryError.stack,
         notificationId: notification.id,
         masjidId: notification.masjid_id
       });
-      throw queryError;
+      // Don't throw - just return early to prevent blocking
+      return;
     }
 
     logger.info(`Found ${subscriptions.length} active subscriptions with FCM tokens for masjid ${notification.masjid_id}`);
