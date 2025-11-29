@@ -432,6 +432,8 @@ exports.sendPushNotification = async (req, res) => {
  */
 async function sendNotificationsToSubscribers(masjid, notification) {
   try {
+    logger.info(`Starting notification sending for notification ${notification.id}, masjid ${notification.masjid_id}, category ${notification.category}`);
+    
     // Get all active subscriptions for this masjid (no category filter - one record per masjid)
     const subscriptions = await MasjidSubscription.findAll({
       where: {
@@ -455,8 +457,10 @@ async function sendNotificationsToSubscribers(masjid, notification) {
       ]
     });
 
+    logger.info(`Found ${subscriptions.length} active subscriptions with FCM tokens for masjid ${notification.masjid_id}`);
+
     if (subscriptions.length === 0) {
-      logger.info(`No active subscriptions with FCM tokens found for masjid ${notification.masjid_id}`);
+      logger.warn(`No active subscriptions with FCM tokens found for masjid ${notification.masjid_id} - notification cannot be sent`);
       return;
     }
 
@@ -504,7 +508,7 @@ async function sendNotificationsToSubscribers(masjid, notification) {
     });
 
     if (validSubscriptions.length === 0) {
-      logger.info(`No valid subscriptions with ${notification.category} notifications enabled for masjid ${notification.masjid_id}`);
+      logger.warn(`No valid subscriptions with ${notification.category} notifications enabled for masjid ${notification.masjid_id} (had ${subscriptions.length} total subscriptions)`);
       return;
     }
 
@@ -516,18 +520,26 @@ async function sendNotificationsToSubscribers(masjid, notification) {
       .filter(token => token && token.trim() !== '');
 
     if (fcmTokens.length === 0) {
-      logger.warn(`No valid FCM tokens found for masjid ${notification.masjid_id}, category ${notification.category}`);
+      logger.warn(`No valid FCM tokens found for masjid ${notification.masjid_id}, category ${notification.category} (had ${validSubscriptions.length} valid subscriptions)`);
       return;
     }
 
-    // Prepare notification data
+    // Prepare notification data (all values must be strings for FCM)
     const notificationData = {
-      notificationId: notification.id,
-      masjidId: notification.masjid_id,
-      masjidName: masjid.name,
-      category: notification.category,
+      notificationId: String(notification.id),
+      masjidId: String(notification.masjid_id),
+      masjidName: String(masjid.name),
+      category: String(notification.category),
       type: 'masjid_notification'
     };
+
+    logger.info(`Sending notification with data:`, {
+      title: notification.title,
+      description: notification.description.substring(0, 50) + (notification.description.length > 50 ? '...' : ''),
+      fcmTokensCount: fcmTokens.length,
+      masjidId: notification.masjid_id,
+      category: notification.category
+    });
 
     // Send push notifications in batch
     const result = await pushNotificationService.sendBatchPushNotifications(
@@ -538,7 +550,19 @@ async function sendNotificationsToSubscribers(masjid, notification) {
     );
 
     if (result.success) {
-      logger.info(`Push notifications sent: ${result.successful} successful, ${result.failed} failed for masjid ${notification.masjid_id}`);
+      logger.info(`Push notifications sent: ${result.successful} successful, ${result.failed} failed for masjid ${notification.masjid_id}, category ${notification.category}`);
+      
+      // Log detailed error information for failed notifications
+      if (result.failed > 0 && result.results) {
+        const failedResults = result.results.filter(r => !r.success);
+        logger.warn(`Notification sending failures for masjid ${notification.masjid_id}:`, {
+          totalFailed: failedResults.length,
+          errors: failedResults.map(r => ({
+            code: r.error?.code || 'unknown',
+            message: r.error?.message || r.error || 'Unknown error'
+          }))
+        });
+      }
       
       // Handle invalid tokens - deactivate subscriptions with invalid tokens
       if (result.results && result.results.length > 0) {
@@ -561,10 +585,22 @@ async function sendNotificationsToSubscribers(masjid, notification) {
         }
       }
     } else {
-      logger.error(`Failed to send push notifications: ${result.error}`);
+      logger.error(`Failed to send push notifications for masjid ${notification.masjid_id}, category ${notification.category}: ${result.error}`, {
+        masjidId: notification.masjid_id,
+        category: notification.category,
+        code: result.code,
+        error: result.error,
+        originalError: result.originalError
+      });
     }
   } catch (error) {
-    logger.error(`Error sending push notifications to subscribers: ${error.message}`);
+    logger.error(`Error sending push notifications to subscribers for notification ${notification.id}: ${error.message}`, {
+      notificationId: notification.id,
+      masjidId: notification.masjid_id,
+      category: notification.category,
+      error: error.message,
+      stack: error.stack
+    });
     // Don't throw - we don't want to fail notification creation if push notification sending fails
   }
 }
