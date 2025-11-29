@@ -312,10 +312,11 @@ exports.sendBatchPushNotifications = async (fcmTokens, title, body, data = {}) =
             messageId
           };
         } catch (error) {
-          logger.error(`Failed to send notification to token ${token}: ${error.message}`, {
-            token,
+          // Mask token for logging (show first 10 and last 10 chars)
+          const maskedToken = token ? `${token.substring(0, 10)}...${token.substring(token.length - 10)}` : 'N/A';
+          logger.error(`Failed to send notification to token ${maskedToken}: ${error.message}`, {
             code: error.code,
-            stack: error.stack
+            errorType: error.code || 'unknown'
           });
 
           // Identify auth/config errors once to return immediately
@@ -340,8 +341,8 @@ exports.sendBatchPushNotifications = async (fcmTokens, title, body, data = {}) =
             token,
             success: false,
             error: {
-              code: error.code,
-              message: error.message
+              code: error.code || 'unknown',
+              message: error.message || 'Unknown error occurred'
             }
           };
         }
@@ -375,7 +376,17 @@ exports.sendBatchPushNotifications = async (fcmTokens, title, body, data = {}) =
     const successCount = results.filter(r => r.success).length;
     const failureCount = results.filter(r => !r.success).length;
     
-    logger.info(`Batch push notifications sent: ${successCount} successful, ${failureCount} failed`);
+    // Log summary of failures by error type
+    if (failureCount > 0) {
+      const errorSummary = {};
+      results.filter(r => !r.success).forEach(r => {
+        const errorCode = r.error?.code || 'unknown';
+        errorSummary[errorCode] = (errorSummary[errorCode] || 0) + 1;
+      });
+      logger.warn(`Batch push notifications completed: ${successCount} successful, ${failureCount} failed. Error breakdown:`, errorSummary);
+    } else {
+      logger.info(`Batch push notifications sent: ${successCount} successful, ${failureCount} failed`);
+    }
     
     return { 
       success: true, 

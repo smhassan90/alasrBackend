@@ -355,8 +355,21 @@ exports.sendPushNotification = async (req, res) => {
     if (result.success) {
       logger.info(`Push notifications sent via API: ${result.successful} successful, ${result.failed} failed for masjid ${masjidId}`);
       
-      // Handle invalid tokens - deactivate subscriptions with invalid tokens
+      // Log detailed error information for failed notifications
       if (result.results && result.results.length > 0) {
+        const failedResults = result.results.filter(r => !r.success);
+        if (failedResults.length > 0) {
+          logger.warn(`Failed notification details for masjid ${masjidId}:`, {
+            totalFailed: failedResults.length,
+            errors: failedResults.map(r => ({
+              token: r.token ? `${r.token.substring(0, 20)}...` : 'N/A',
+              code: r.error?.code || 'unknown',
+              message: r.error?.message || r.error || 'Unknown error'
+            }))
+          });
+        }
+
+        // Handle invalid tokens - deactivate subscriptions with invalid tokens
         const invalidTokens = result.results
           .filter(r => !r.success && (r.error?.code === 'messaging/invalid-registration-token' || r.error?.code === 'messaging/registration-token-not-registered'))
           .map(r => r.token);
@@ -375,16 +388,36 @@ exports.sendPushNotification = async (req, res) => {
         }
       }
 
-      return responseHelper.success(res, {
+      // Include error details in response if there are failures
+      const responseData = {
         sent: result.successful,
         failed: result.failed,
         total: result.total,
         masjidId: masjidId,
         category: category
-      }, `Push notifications sent: ${result.successful} successful, ${result.failed} failed`);
+      };
+
+      // Add error details if there are failures (for debugging)
+      if (result.failed > 0 && result.results) {
+        const failedResults = result.results.filter(r => !r.success);
+        responseData.failureDetails = failedResults.map(r => ({
+          code: r.error?.code || 'unknown',
+          message: r.error?.message || r.error || 'Unknown error'
+        }));
+      }
+
+      return responseHelper.success(res, responseData, `Push notifications sent: ${result.successful} successful, ${result.failed} failed`);
     } else {
-      logger.error(`Failed to send push notifications: ${result.error}`);
-      return responseHelper.error(res, `Failed to send push notifications: ${result.error}`, 500);
+      logger.error(`Failed to send push notifications: ${result.error}`, {
+        masjidId,
+        category,
+        code: result.code,
+        error: result.error
+      });
+      return responseHelper.error(res, `Failed to send push notifications: ${result.error}`, 500, {
+        code: result.code,
+        details: result.originalError
+      });
     }
   } catch (error) {
     logger.error(`Send push notification error: ${error.message}`);

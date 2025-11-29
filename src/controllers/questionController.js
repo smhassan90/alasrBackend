@@ -570,6 +570,8 @@ async function sendQuestionNotificationToImams(masjid, question) {
  */
 async function sendQuestionReplyNotification(masjid, question, reply, replierName) {
   try {
+    logger.info(`Starting reply notification for question ${question.id}, masjid ${masjid.id}, user_id: ${question.user_id || 'N/A'}, device_id: ${question.device_id || 'N/A'}`);
+    
     // Get ALL active subscriptions for this masjid (similar to send-push endpoint)
     const allSubscriptions = await MasjidSubscription.findAll({
       where: {
@@ -593,8 +595,10 @@ async function sendQuestionReplyNotification(masjid, question, reply, replierNam
       ]
     });
 
+    logger.info(`Found ${allSubscriptions.length} active subscriptions with FCM tokens for masjid ${masjid.id}`);
+
     if (allSubscriptions.length === 0) {
-      logger.info(`No active subscriptions with FCM tokens found for masjid ${masjid.id}`);
+      logger.warn(`No active subscriptions with FCM tokens found for masjid ${masjid.id} - notification cannot be sent`);
       return;
     }
 
@@ -615,32 +619,48 @@ async function sendQuestionReplyNotification(masjid, question, reply, replierNam
 
     // Filter subscriptions to find the one that matches the question's user
     // If question has user_id, match by user_id
-    // If question has device_id, try to match by device_id, but also include all if no match
+    // If question has device_id, try to match by device_id (handling hash vs raw format mismatch)
     let targetSubscriptions = [];
 
     if (question.user_id) {
       // Match by user_id
       targetSubscriptions = allSubscriptions.filter(sub => sub.user_id === question.user_id);
+      logger.info(`Matching by user_id for question ${question.id}: found ${targetSubscriptions.length} subscriptions`);
     } else if (question.device_id) {
-      // Try to match by device_id first
+      // Question device_id is a hash (32 chars), subscription device_id might be raw
+      // Try exact match first
       targetSubscriptions = allSubscriptions.filter(sub => 
         !sub.user_id && sub.device_id && sub.device_id === question.device_id
       );
       
-      // If no exact match, use all anonymous subscriptions (device_id might be stored differently)
-      // This ensures the user gets notified even if device_id format differs
+      logger.info(`Question ${question.id} device_id: ${question.device_id}, checking ${allSubscriptions.filter(s => !s.user_id && s.device_id).length} anonymous subscriptions`);
+      
+      // If no exact match, the question's device_id is likely a hash while subscription has raw device_id
+      // Try to match by generating hash from subscription device_ids (if we had platform/appVersion)
+      // For now, we'll use a more targeted approach: check if question device_id looks like a hash (32 hex chars)
+      // and if so, we need to match differently
       if (targetSubscriptions.length === 0) {
-        logger.info(`No exact device_id match for question ${question.id}, using all anonymous subscriptions for masjid ${masjid.id}`);
-        targetSubscriptions = allSubscriptions.filter(sub => !sub.user_id && sub.device_id);
+        // Question device_id is a hash (from generateDeviceId), subscription has raw device_id
+        // We can't reverse the hash, but we can try to match by checking all anonymous subscriptions
+        // that have the same masjid. This is a fallback - ideally subscriptions should also use hashed device_id
+        const anonymousSubs = allSubscriptions.filter(sub => !sub.user_id && sub.device_id);
+        logger.info(`No exact device_id match for question ${question.id} (hash: ${question.device_id}), found ${anonymousSubs.length} anonymous subscriptions. Using all anonymous subscriptions as fallback.`);
+        
+        // Use all anonymous subscriptions as fallback - this ensures notification is sent
+        // Note: This is a workaround for the device_id format mismatch
+        targetSubscriptions = anonymousSubs;
+      } else {
+        logger.info(`Exact device_id match found for question ${question.id}: ${targetSubscriptions.length} subscriptions`);
       }
     } else {
       // No user_id or device_id - cannot send notification
-      logger.info(`Question ${question.id} has no user_id or device_id, cannot send notification`);
+      logger.warn(`Question ${question.id} has no user_id or device_id, cannot send notification`);
       return;
     }
 
     if (targetSubscriptions.length === 0) {
-      logger.info(`No matching subscriptions found for question ${question.id}`);
+      logger.warn(`No matching subscriptions found for question ${question.id} (user_id: ${question.user_id || 'N/A'}, device_id: ${question.device_id || 'N/A'})`);
+      logger.warn(`Available subscriptions: ${allSubscriptions.length} total (${allSubscriptions.filter(s => s.user_id).length} authenticated, ${allSubscriptions.filter(s => !s.user_id).length} anonymous)`);
       return;
     }
 
@@ -661,7 +681,7 @@ async function sendQuestionReplyNotification(masjid, question, reply, replierNam
     });
 
     if (validSubscriptions.length === 0) {
-      logger.info(`All subscriptions for question ${question.id} have questions notifications disabled`);
+      logger.warn(`All ${targetSubscriptions.length} subscriptions for question ${question.id} have questions notifications disabled`);
       return;
     }
 
@@ -673,7 +693,7 @@ async function sendQuestionReplyNotification(masjid, question, reply, replierNam
       .filter(token => token && token.trim() !== ''))];
 
     if (fcmTokens.length === 0) {
-      logger.warn(`No valid FCM tokens found for question ${question.id} after filtering`);
+      logger.warn(`No valid FCM tokens found for question ${question.id} after filtering (had ${validSubscriptions.length} valid subscriptions)`);
       return;
     }
 
@@ -725,10 +745,21 @@ async function sendQuestionReplyNotification(masjid, question, reply, replierNam
         }
       }
     } else {
-      logger.error(`Failed to send question reply notification: ${result.error}`);
+      logger.error(`Failed to send question reply notification for question ${question.id}: ${result.error}`, {
+        questionId: question.id,
+        masjidId: masjid.id,
+        fcmTokensCount: fcmTokens.length,
+        error: result.error,
+        code: result.code
+      });
     }
   } catch (error) {
-    logger.error(`Error sending question reply notification: ${error.message}`);
+    logger.error(`Error sending question reply notification for question ${question.id}: ${error.message}`, {
+      questionId: question.id,
+      masjidId: masjid.id,
+      error: error.message,
+      stack: error.stack
+    });
     // Don't throw - we don't want to fail reply if notification sending fails
   }
 }
