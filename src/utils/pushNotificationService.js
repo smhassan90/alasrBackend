@@ -114,8 +114,9 @@ exports.sendPushNotification = async (fcmToken, title, body, data = {}) => {
     const message = {
       notification: {
         title: trimmedTitle,
-        body: trimmedBody,
-        sound: 'default'
+        body: trimmedBody
+        // Note: 'sound' is not allowed in top-level notification object
+        // Sound is configured in platform-specific sections (android/apns) below
       },
       data: {
         ...data,
@@ -253,8 +254,9 @@ exports.sendBatchPushNotifications = async (fcmTokens, title, body, data = {}) =
     const createMessage = token => ({
       notification: {
         title: trimmedTitle,
-        body: trimmedBody,
-        sound: 'default'
+        body: trimmedBody
+        // Note: 'sound' is not allowed in top-level notification object
+        // Sound is configured in platform-specific sections (android/apns) below
       },
       data: {
         ...data,
