@@ -378,6 +378,65 @@ exports.registerFcmToken = async (req, res) => {
 
       logger.info(`FCM token updated for ${updatedCount[0]} subscriptions of user ${req.userId}`);
 
+      // If user has no subscriptions, check if they're assigned to any masjids (imam/admin)
+      // and create subscriptions for those masjids
+      if (updatedCount[0] === 0) {
+        const userMasajids = await UserMasjid.findAll({
+          where: {
+            user_id: req.userId
+          },
+          include: [
+            {
+              model: Masjid,
+              as: 'masjid',
+              where: { is_active: true },
+              required: true
+            }
+          ]
+        });
+
+        if (userMasajids.length > 0) {
+          // Create subscriptions for all masjids the user is assigned to
+          const createdSubscriptions = [];
+          for (const userMasjid of userMasajids) {
+            // Check if subscription already exists (might be inactive)
+            let subscription = await MasjidSubscription.findOne({
+              where: {
+                masjid_id: userMasjid.masjid_id,
+                user_id: req.userId
+              }
+            });
+
+            if (subscription) {
+              // Reactivate and update FCM token
+              subscription.fcm_token = fcmToken;
+              subscription.is_active = true;
+              await subscription.save();
+              createdSubscriptions.push(subscription);
+            } else {
+              // Create new subscription
+              subscription = await MasjidSubscription.create({
+                masjid_id: userMasjid.masjid_id,
+                user_id: req.userId,
+                device_id: null,
+                fcm_token: fcmToken,
+                is_active: true
+              });
+              createdSubscriptions.push(subscription);
+            }
+          }
+
+          logger.info(`Created ${createdSubscriptions.length} subscriptions for user ${req.userId} based on masjid assignments`);
+
+          return responseHelper.success(res, {
+            subscriptionsUpdated: updatedCount[0],
+            subscriptionsCreated: createdSubscriptions.length,
+            totalSubscriptions: createdSubscriptions.length,
+            fcmToken: fcmToken
+          }, `FCM token registered successfully. Created ${createdSubscriptions.length} subscription(s) for assigned masjids.`);
+        }
+      }
+
       return responseHelper.success(res, {
         subscriptionsUpdated: updatedCount[0],
         fcmToken: fcmToken
