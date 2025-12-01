@@ -36,12 +36,33 @@ exports.updateSettingsValidator = [
 ];
 
 exports.registerFcmTokenValidator = [
+  // Accept both fcmToken (camelCase) and fcm_token (snake_case)
   body('fcmToken')
+    .optional()
     .trim()
-    .notEmpty().withMessage('FCM token is required')
+    .notEmpty().withMessage('FCM token cannot be empty if provided')
     .isLength({ min: 10 }).withMessage('FCM token must be at least 10 characters'),
   
+  body('fcm_token')
+    .optional()
+    .trim()
+    .notEmpty().withMessage('FCM token cannot be empty if provided')
+    .isLength({ min: 10 }).withMessage('FCM token must be at least 10 characters'),
+  
+  // Custom validation to ensure at least one FCM token field is provided
+  body().custom((value) => {
+    const fcmToken = value.fcmToken || value.fcm_token;
+    if (!fcmToken || fcmToken.trim().length < 10) {
+      throw new Error('FCM token is required and must be at least 10 characters');
+    }
+    return true;
+  }),
+  
   body('masjidId')
+    .optional()
+    .isUUID().withMessage('Invalid masjid ID'),
+  
+  body('masjid_id')
     .optional()
     .isUUID().withMessage('Invalid masjid ID')
 ];

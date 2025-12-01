@@ -305,7 +305,9 @@ exports.getUserMasajids = async (req, res) => {
  */
 exports.registerFcmToken = async (req, res) => {
   try {
-    const { fcmToken, masjidId } = req.body;
+    // Accept both fcmToken (camelCase) and fcm_token (snake_case) from frontend
+    const fcmToken = req.body.fcmToken || req.body.fcm_token;
+    const masjidId = req.body.masjidId || req.body.masjid_id;
 
     if (!fcmToken) {
       return responseHelper.error(res, 'FCM token is required', 400);
@@ -387,78 +389,4 @@ exports.registerFcmToken = async (req, res) => {
   }
 };
 
-/**
- * Register/update FCM token for authenticated user
- * Updates FCM token for all active subscriptions of the user
- * @route POST /api/users/fcm-token
- */
-exports.registerFcmToken = async (req, res) => {
-  try {
-    const { fcmToken, masjidId } = req.body;
-
-    if (!fcmToken) {
-      return responseHelper.error(res, 'FCM token is required', 400);
-    }
-
-    // If masjidId is provided, update/create subscription for that specific masjid
-    if (masjidId) {
-      // Validate masjid exists
-      const masjid = await Masjid.findByPk(masjidId);
-      if (!masjid) {
-        return responseHelper.notFound(res, 'Masjid not found');
-      }
-
-      // Find or create subscription for this masjid
-      let subscription = await MasjidSubscription.findOne({
-        where: {
-          masjid_id: masjidId,
-          user_id: req.userId
-        }
-      });
-
-      if (subscription) {
-        // Update existing subscription
-        subscription.fcm_token = fcmToken;
-        subscription.is_active = true;
-        await subscription.save();
-        logger.info(`FCM token updated for user ${req.userId}, masjid ${masjidId}`);
-      } else {
-        // Create new subscription
-        subscription = await MasjidSubscription.create({
-          masjid_id: masjidId,
-          user_id: req.userId,
-          device_id: null,
-          fcm_token: fcmToken,
-          is_active: true
-        });
-        logger.info(`Subscription created with FCM token for user ${req.userId}, masjid ${masjidId}`);
-      }
-
-      return responseHelper.success(res, {
-        subscription: subscription,
-        masjidId: masjidId
-      }, 'FCM token registered successfully');
-    } else {
-      // Update FCM token for all existing subscriptions of the user
-      const updatedCount = await MasjidSubscription.update(
-        { fcm_token: fcmToken },
-        {
-          where: {
-            user_id: req.userId,
-            is_active: true
-          }
-        }
-      );
-
-      logger.info(`FCM token updated for ${updatedCount[0]} subscriptions of user ${req.userId}`);
-
-      return responseHelper.success(res, {
-        subscriptionsUpdated: updatedCount[0]
-      }, 'FCM token registered successfully');
-    }
-  } catch (error) {
-    logger.error(`Register FCM token error: ${error.message}`);
-    return responseHelper.error(res, 'Failed to register FCM token', 500);
-  }
-};
 
