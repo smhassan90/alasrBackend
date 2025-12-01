@@ -38,5 +38,8 @@ router.post('/api-key/generate', superAdminController.generateApiKey);
 // Send notification to imams
 router.post('/notifications/send-to-imams', superAdminValidator.sendNotificationToImamsValidator, validate, superAdminController.sendNotificationToImams);
 
+// Get imam subscription status (debug endpoint)
+router.get('/imams/subscriptions', superAdminController.getImamSubscriptions);
+
 module.exports = router;
 

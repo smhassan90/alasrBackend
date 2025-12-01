@@ -773,3 +773,141 @@ exports.sendNotificationToImams = async (req, res) => {
   }
 };
 
+/**
+ * Get imam subscription status with FCM tokens (Super Admin only)
+ * Shows all imams and their subscription status
+ * @route GET /api/super-admin/imams/subscriptions
+ */
+exports.getImamSubscriptions = async (req, res) => {
+  try {
+    const { masjidId } = req.query;
+
+    // Build where clause for finding imams
+    const imamWhereClause = {
+      role: 'imam'
+    };
+
+    // If masjidId is provided, filter by masjid
+    if (masjidId) {
+      // Validate masjid exists
+      const masjid = await Masjid.findByPk(masjidId);
+      if (!masjid) {
+        return responseHelper.notFound(res, 'Masjid not found');
+      }
+      imamWhereClause.masjid_id = masjidId;
+    }
+
+    // Find all imams (optionally filtered by masjid)
+    const imams = await UserMasjid.findAll({
+      where: imamWhereClause,
+      include: [
+        {
+          model: User,
+          as: 'user',
+          attributes: ['id', 'name', 'email', 'is_active'],
+          where: {
+            is_active: true
+          },
+          required: true
+        },
+        {
+          model: Masjid,
+          as: 'masjid',
+          attributes: ['id', 'name', 'city'],
+          required: true
+        }
+      ],
+      order: [['masjid_id', 'ASC'], ['assigned_at', 'DESC']]
+    });
+
+    if (imams.length === 0) {
+      const message = masjidId 
+        ? 'No active imams found for this masjid'
+        : 'No active imams found';
+      return responseHelper.success(res, {
+        imams: [],
+        total: 0,
+        message: message
+      }, message);
+    }
+
+    // Get user IDs of imams
+    const userIds = imams.map(imam => imam.user_id);
+
+    // Get all subscriptions for these imams
+    const subscriptions = await MasjidSubscription.findAll({
+      where: {
+        user_id: { [Op.in]: userIds }
+      },
+      include: [
+        {
+          model: Masjid,
+          as: 'masjid',
+          attributes: ['id', 'name', 'city'],
+          required: false
+        }
+      ],
+      order: [['masjid_id', 'ASC']]
+    });
+
+    // Group subscriptions by user_id
+    const subscriptionsByUser = {};
+    subscriptions.forEach(sub => {
+      if (!subscriptionsByUser[sub.user_id]) {
+        subscriptionsByUser[sub.user_id] = [];
+      }
+      subscriptionsByUser[sub.user_id].push(sub);
+    });
+
+    // Format response with subscription details
+    const imamsWithSubscriptions = imams.map(imam => {
+      const userSubscriptions = subscriptionsByUser[imam.user_id] || [];
+      const activeSubscriptions = userSubscriptions.filter(sub => sub.is_active);
+      const subscriptionsWithFcm = activeSubscriptions.filter(sub => sub.fcm_token && sub.fcm_token.trim() !== '');
+
+      return {
+        imamId: imam.user.id,
+        imamName: imam.user.name,
+        imamEmail: imam.user.email,
+        masjidId: imam.masjid.id,
+        masjidName: imam.masjid.name,
+        masjidCity: imam.masjid.city,
+        hasSubscriptions: userSubscriptions.length > 0,
+        totalSubscriptions: userSubscriptions.length,
+        activeSubscriptions: activeSubscriptions.length,
+        subscriptionsWithFcm: subscriptionsWithFcm.length,
+        hasFcmToken: subscriptionsWithFcm.length > 0,
+        subscriptions: userSubscriptions.map(sub => ({
+          id: sub.id,
+          masjidId: sub.masjid_id,
+          masjidName: sub.masjid?.name || 'N/A',
+          isActive: sub.is_active,
+          hasFcmToken: !!(sub.fcm_token && sub.fcm_token.trim() !== ''),
+          fcmTokenPreview: sub.fcm_token 
+            ? `${sub.fcm_token.substring(0, 20)}...${sub.fcm_token.substring(sub.fcm_token.length - 10)}`
+            : null,
+          createdAt: sub.created_at,
+          updatedAt: sub.updated_at
+        }))
+      };
+    });
+
+    // Summary statistics
+    const summary = {
+      totalImams: imamsWithSubscriptions.length,
+      imamsWithSubscriptions: imamsWithSubscriptions.filter(i => i.hasSubscriptions).length,
+      imamsWithActiveSubscriptions: imamsWithSubscriptions.filter(i => i.activeSubscriptions > 0).length,
+      imamsWithFcmTokens: imamsWithSubscriptions.filter(i => i.hasFcmToken).length,
+      imamsWithoutFcmTokens: imamsWithSubscriptions.filter(i => !i.hasFcmToken).length
+    };
+
+    return responseHelper.success(res, {
+      summary,
+      imams: imamsWithSubscriptions
+    }, 'Imam subscription status retrieved successfully');
+  } catch (error) {
+    logger.error(`Get imam subscriptions error: ${error.message}`);
+    return responseHelper.error(res, 'Failed to retrieve imam subscriptions', 500);
+  }
+};
+
