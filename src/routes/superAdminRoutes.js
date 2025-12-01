@@ -41,5 +41,8 @@ router.post('/notifications/send-to-imams', superAdminValidator.sendNotification
 // Get imam subscription status (debug endpoint)
 router.get('/imams/subscriptions', superAdminController.getImamSubscriptions);
 
+// Add/update FCM token for imam subscription (helper for testing)
+router.post('/imams/:imamId/subscription', superAdminValidator.addImamFcmTokenValidator, validate, superAdminController.addImamFcmToken);
+
 module.exports = router;
 

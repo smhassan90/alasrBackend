@@ -35,3 +35,14 @@ exports.updateSettingsValidator = [
     .isBoolean().withMessage('questions_notifications must be a boolean')
 ];
 
+exports.registerFcmTokenValidator = [
+  body('fcmToken')
+    .trim()
+    .notEmpty().withMessage('FCM token is required')
+    .isLength({ min: 10 }).withMessage('FCM token must be at least 10 characters'),
+  
+  body('masjidId')
+    .optional()
+    .isUUID().withMessage('Invalid masjid ID')
+];
+

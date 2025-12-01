@@ -138,3 +138,14 @@ exports.sendNotificationToImamsValidator = [
     .isObject().withMessage('Data must be an object')
 ];
 
+exports.addImamFcmTokenValidator = [
+  body('masjidId')
+    .notEmpty().withMessage('Masjid ID is required')
+    .isUUID().withMessage('Invalid masjid ID'),
+  
+  body('fcmToken')
+    .trim()
+    .notEmpty().withMessage('FCM token is required')
+    .isLength({ min: 10 }).withMessage('FCM token must be at least 10 characters')
+];
+

@@ -27,5 +27,8 @@ router.put('/settings', userValidator.updateSettingsValidator, validate, userCon
 // User masajids
 router.get('/masajids', userController.getUserMasajids);
 
+// FCM token registration
+router.post('/fcm-token', userValidator.registerFcmTokenValidator, validate, userController.registerFcmToken);
+
 module.exports = router;
 

@@ -911,3 +911,106 @@ exports.getImamSubscriptions = async (req, res) => {
   }
 };
 
+/**
+ * Add or update FCM token for imam subscription (Super Admin only)
+ * Creates subscription if it doesn't exist, or updates existing one
+ * @route POST /api/super-admin/imams/:imamId/subscription
+ */
+exports.addImamFcmToken = async (req, res) => {
+  try {
+    const { imamId } = req.params;
+    const { masjidId, fcmToken } = req.body;
+
+    // Validate inputs
+    if (!masjidId || !fcmToken) {
+      return responseHelper.error(res, 'Masjid ID and FCM token are required', 400);
+    }
+
+    // Validate imam exists and is actually an imam
+    const imam = await UserMasjid.findOne({
+      where: {
+        user_id: imamId,
+        role: 'imam'
+      },
+      include: [
+        {
+          model: User,
+          as: 'user',
+          attributes: ['id', 'name', 'email', 'is_active']
+        }
+      ]
+    });
+
+    if (!imam) {
+      return responseHelper.notFound(res, 'Imam not found or user is not an imam');
+    }
+
+    if (!imam.user.is_active) {
+      return responseHelper.error(res, 'Imam account is not active', 400);
+    }
+
+    // Validate masjid exists
+    const masjid = await Masjid.findByPk(masjidId);
+    if (!masjid) {
+      return responseHelper.notFound(res, 'Masjid not found');
+    }
+
+    // Check if subscription already exists
+    let subscription = await MasjidSubscription.findOne({
+      where: {
+        masjid_id: masjidId,
+        user_id: imamId
+      }
+    });
+
+    if (subscription) {
+      // Update existing subscription
+      subscription.fcm_token = fcmToken;
+      subscription.is_active = true;
+      await subscription.save();
+      
+      logger.info(`FCM token updated for imam ${imamId}, masjid ${masjidId} by super admin ${req.userId}`);
+      
+      return responseHelper.success(res, {
+        subscription: subscription,
+        imam: {
+          id: imam.user.id,
+          name: imam.user.name,
+          email: imam.user.email
+        },
+        masjid: {
+          id: masjid.id,
+          name: masjid.name
+        }
+      }, 'FCM token updated successfully');
+    } else {
+      // Create new subscription
+      subscription = await MasjidSubscription.create({
+        masjid_id: masjidId,
+        user_id: imamId,
+        device_id: null,
+        fcm_token: fcmToken,
+        is_active: true
+      });
+
+      logger.info(`Subscription created with FCM token for imam ${imamId}, masjid ${masjidId} by super admin ${req.userId}`);
+
+      return responseHelper.success(res, {
+        subscription: subscription,
+        imam: {
+          id: imam.user.id,
+          name: imam.user.name,
+          email: imam.user.email
+        },
+        masjid: {
+          id: masjid.id,
+          name: masjid.name
+        }
+      }, 'Subscription created with FCM token successfully', 201);
+    }
+  } catch (error) {
+    logger.error(`Add imam FCM token error: ${error.message}`);
+    return responseHelper.error(res, 'Failed to add FCM token', 500);
+  }
+};
+
