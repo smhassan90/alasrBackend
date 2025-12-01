@@ -1,4 +1,4 @@
-const { PrayerTime, Masjid, User, MasjidSubscription, UserSettings, DeviceSettings, sequelize } = require('../models');
+const { PrayerTime, Masjid, User, MasjidSubscription, UserSettings, DeviceSettings, UserMasjid, sequelize } = require('../models');
 const responseHelper = require('../utils/responseHelper');
 const logger = require('../utils/logger');
 const pushNotificationService = require('../utils/pushNotificationService');
@@ -164,8 +164,9 @@ exports.createPrayerTime = async (req, res) => {
 
     // Send notifications automatically when prayer time changes (only to subscribed users)
     // The sendPrayerTimeNotifications function already filters by user preferences
+    // Exclude the user who made the change (imam/admin) from receiving notifications
     if (timeChanged) {
-      sendPrayerTimeNotifications(masjid, prayerTimeRecord).catch(err => {
+      sendPrayerTimeNotifications(masjid, prayerTimeRecord, req.userId).catch(err => {
         logger.error(`Failed to send prayer time notifications: ${err.message}`);
       });
     }
@@ -214,8 +215,9 @@ exports.updatePrayerTime = async (req, res) => {
 
     // Send notifications automatically when prayer time changes (only to subscribed users)
     // The sendPrayerTimeNotifications function already filters by user preferences
+    // Exclude the user who made the change (imam/admin) from receiving notifications
     if (timeChanged) {
-      sendPrayerTimeNotifications(prayerTimeRecord.masjid, prayerTimeRecord).catch(err => {
+      sendPrayerTimeNotifications(prayerTimeRecord.masjid, prayerTimeRecord, req.userId).catch(err => {
         logger.error(`Failed to send prayer time notifications: ${err.message}`);
       });
     }
@@ -317,10 +319,11 @@ exports.bulkUpdatePrayerTimes = async (req, res) => {
 
     // Send notifications automatically when prayer times change (only to subscribed users)
     // The sendPrayerTimeBulkNotifications function already filters by user preferences
+    // Exclude the user who made the change (imam/admin) from receiving notifications
     if (hasChanges) {
       // Get masjid info for notification
       const masjidInfo = await Masjid.findByPk(masjidId);
-      sendPrayerTimeBulkNotifications(masjidInfo, createdPrayerTimes).catch(err => {
+      sendPrayerTimeBulkNotifications(masjidInfo, createdPrayerTimes, req.userId).catch(err => {
         logger.error(`Failed to send bulk prayer time notifications: ${err.message}`);
       });
     }
@@ -339,8 +342,12 @@ exports.bulkUpdatePrayerTimes = async (req, res) => {
  * 1. Have subscribed to the masjid with category "Prayer Times"
  * 2. Have prayer_times_notifications enabled in their settings (for authenticated users)
  * 3. Have valid FCM tokens
+ * 4. Are NOT the imam/admin who made the change
+ * @param {Object} masjid - Masjid object
+ * @param {Object} prayerTime - PrayerTime object
+ * @param {string} excludeUserId - User ID to exclude from notifications (the one who made the change)
  */
-async function sendPrayerTimeNotifications(masjid, prayerTime) {
+async function sendPrayerTimeNotifications(masjid, prayerTime, excludeUserId = null) {
   try {
     // Prayer time notifications always send - no debounce
     // Users want to receive 1 notification per prayer time change
@@ -390,10 +397,36 @@ async function sendPrayerTimeNotifications(masjid, prayerTime) {
       });
     }
 
+    // Get imams/admins for this masjid to exclude them if they made the change
+    let imamAdminUserIds = [];
+    if (excludeUserId) {
+      const imamAdmins = await UserMasjid.findAll({
+        where: {
+          masjid_id: masjid.id,
+          user_id: excludeUserId,
+          role: { [Op.in]: ['imam', 'admin'] }
+        }
+      });
+      // If the user who made the change is an imam/admin, exclude them
+      if (imamAdmins.length > 0) {
+        imamAdminUserIds.push(excludeUserId);
+        logger.info(`Excluding imam/admin ${excludeUserId} (${imamAdmins[0].role}) from prayer time notifications for masjid ${masjid.id} (they made the change)`);
+      } else {
+        logger.info(`User ${excludeUserId} is not an imam/admin for masjid ${masjid.id}, will not exclude from notifications`);
+      }
+    }
+
     // Filter subscriptions:
     // 1. For authenticated users: check if prayer_times_notifications is enabled
     // 2. For anonymous users: check device settings
+    // 3. Exclude imams/admins who made the change
     const validSubscriptions = subscriptions.filter(sub => {
+      // Exclude the user who made the change if they're an imam/admin
+      if (sub.user_id && imamAdminUserIds.includes(sub.user_id)) {
+        logger.info(`Filtering out subscription ${sub.id} for user ${sub.user_id} (imam/admin who made the change)`);
+        return false;
+      }
+
       if (sub.user_id) {
         // Authenticated user - check user settings
         const settings = sub.user?.settings;
@@ -522,8 +555,11 @@ async function sendPrayerTimeNotifications(masjid, prayerTime) {
 
 /**
  * Send push notifications for bulk prayer time updates
+ * @param {Object} masjid - Masjid object
+ * @param {Array} prayerTimes - Array of PrayerTime objects
+ * @param {string} excludeUserId - User ID to exclude from notifications (the one who made the change)
  */
-async function sendPrayerTimeBulkNotifications(masjid, prayerTimes) {
+async function sendPrayerTimeBulkNotifications(masjid, prayerTimes, excludeUserId = null) {
   try {
     // Bulk updates always send notifications - no debounce
     // This ensures users always get notified about intentional bulk updates
@@ -573,8 +609,33 @@ async function sendPrayerTimeBulkNotifications(masjid, prayerTimes) {
       });
     }
 
+    // Get imams/admins for this masjid to exclude them if they made the change
+    let imamAdminUserIds = [];
+    if (excludeUserId) {
+      const imamAdmins = await UserMasjid.findAll({
+        where: {
+          masjid_id: masjid.id,
+          user_id: excludeUserId,
+          role: { [Op.in]: ['imam', 'admin'] }
+        }
+      });
+      // If the user who made the change is an imam/admin, exclude them
+      if (imamAdmins.length > 0) {
+        imamAdminUserIds.push(excludeUserId);
+        logger.info(`Excluding imam/admin ${excludeUserId} (${imamAdmins[0].role}) from bulk prayer time notifications for masjid ${masjid.id} (they made the change)`);
+      } else {
+        logger.info(`User ${excludeUserId} is not an imam/admin for masjid ${masjid.id}, will not exclude from bulk notifications`);
+      }
+    }
+
     // Filter subscriptions
     const validSubscriptions = subscriptions.filter(sub => {
+      // Exclude the user who made the change if they're an imam/admin
+      if (sub.user_id && imamAdminUserIds.includes(sub.user_id)) {
+        logger.info(`Filtering out subscription ${sub.id} for user ${sub.user_id} (imam/admin who made the bulk change)`);
+        return false;
+      }
+
       if (sub.user_id) {
         // Authenticated user - check user settings
         const settings = sub.user?.settings;
