@@ -118,3 +118,23 @@ exports.updateUserValidator = [
     .isBoolean().withMessage('can_create_notifications must be a boolean')
 ];
 
+exports.sendNotificationToImamsValidator = [
+  body('title')
+    .trim()
+    .notEmpty().withMessage('Title is required')
+    .isLength({ min: 1, max: 255 }).withMessage('Title must be between 1 and 255 characters'),
+  
+  body('body')
+    .trim()
+    .notEmpty().withMessage('Body is required')
+    .isLength({ min: 1 }).withMessage('Body must not be empty'),
+  
+  body('masjidId')
+    .optional()
+    .isUUID().withMessage('Invalid masjid ID'),
+  
+  body('data')
+    .optional()
+    .isObject().withMessage('Data must be an object')
+];
+

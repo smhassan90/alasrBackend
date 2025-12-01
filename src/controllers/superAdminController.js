@@ -1,8 +1,9 @@
-const { User, Masjid, UserMasjid, sequelize } = require('../models');
+const { User, Masjid, UserMasjid, MasjidSubscription, sequelize } = require('../models');
 const responseHelper = require('../utils/responseHelper');
 const logger = require('../utils/logger');
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
+const pushNotificationService = require('../utils/pushNotificationService');
 const { Op } = require('sequelize');
 
 /**
@@ -603,6 +604,172 @@ exports.generateApiKey = async (req, res) => {
   } catch (error) {
     logger.error(`Generate API key error: ${error.message}`);
     return responseHelper.error(res, 'Failed to generate API key', 500);
+  }
+};
+
+/**
+ * Send general notification to all imams (Super Admin only)
+ * Can optionally filter by masjidId to send to imams of a specific masjid
+ * @route POST /api/super-admin/notifications/send-to-imams
+ */
+exports.sendNotificationToImams = async (req, res) => {
+  try {
+    const { title, body, masjidId, data = {} } = req.body;
+
+    // Build where clause for finding imams
+    const imamWhereClause = {
+      role: 'imam'
+    };
+
+    // If masjidId is provided, filter by masjid
+    if (masjidId) {
+      // Validate masjid exists
+      const masjid = await Masjid.findByPk(masjidId);
+      if (!masjid) {
+        return responseHelper.notFound(res, 'Masjid not found');
+      }
+      imamWhereClause.masjid_id = masjidId;
+    }
+
+    // Find all imams (optionally filtered by masjid)
+    const imams = await UserMasjid.findAll({
+      where: imamWhereClause,
+      include: [
+        {
+          model: User,
+          as: 'user',
+          attributes: ['id', 'name', 'email'],
+          where: {
+            is_active: true
+          },
+          required: true
+        }
+      ]
+    });
+
+    if (imams.length === 0) {
+      const message = masjidId 
+        ? 'No active imams found for this masjid'
+        : 'No active imams found';
+      return responseHelper.success(res, {
+        sent: 0,
+        total: 0,
+        message: message
+      }, message);
+    }
+
+    // Get user IDs of imams
+    const userIds = imams.map(imam => imam.user_id);
+
+    // Get FCM tokens for these imams from MasjidSubscription
+    // Get subscriptions for all masjids these imams are subscribed to
+    const subscriptions = await MasjidSubscription.findAll({
+      where: {
+        user_id: { [Op.in]: userIds },
+        is_active: true,
+        fcm_token: { [Op.ne]: null }
+      }
+    });
+
+    if (subscriptions.length === 0) {
+      logger.info(`No active subscriptions with FCM tokens found for imams`);
+      return responseHelper.success(res, {
+        sent: 0,
+        total: 0,
+        message: 'No active subscriptions with FCM tokens found for imams'
+      }, 'No imams with active subscriptions to notify');
+    }
+
+    // Collect all FCM tokens (deduplicate)
+    const fcmTokens = [...new Set(
+      subscriptions
+        .map(sub => sub.fcm_token)
+        .filter(token => token && token.trim() !== '')
+    )];
+
+    if (fcmTokens.length === 0) {
+      logger.warn(`No valid FCM tokens found for imams`);
+      return responseHelper.success(res, {
+        sent: 0,
+        total: 0,
+        message: 'No valid FCM tokens found'
+      }, 'No valid tokens to send notifications');
+    }
+
+    // Prepare notification data
+    const notificationData = {
+      category: 'General',
+      type: 'super_admin_notification',
+      ...data
+    };
+
+    if (masjidId) {
+      notificationData.masjidId = masjidId;
+    }
+
+    // Send push notifications in batch
+    const result = await pushNotificationService.sendBatchPushNotifications(
+      fcmTokens,
+      title,
+      body,
+      notificationData
+    );
+
+    if (result.success) {
+      logger.info(`Super admin notification sent to imams: ${result.successful} successful, ${result.failed} failed`);
+      
+      // Handle invalid tokens - deactivate subscriptions with invalid tokens
+      if (result.results && result.results.length > 0) {
+        const invalidTokens = result.results
+          .filter(r => !r.success && (r.error?.code === 'messaging/invalid-registration-token' || r.error?.code === 'messaging/registration-token-not-registered'))
+          .map(r => r.token);
+
+        if (invalidTokens.length > 0) {
+          await MasjidSubscription.update(
+            { is_active: false },
+            {
+              where: {
+                fcm_token: { [Op.in]: invalidTokens }
+              }
+            }
+          );
+          logger.info(`Deactivated ${invalidTokens.length} subscriptions with invalid FCM tokens`);
+        }
+      }
+
+      // Include error details in response if there are failures
+      const responseData = {
+        sent: result.successful,
+        failed: result.failed,
+        total: result.total,
+        imamsFound: imams.length,
+        masjidId: masjidId || null
+      };
+
+      // Add error details if there are failures (for debugging)
+      if (result.failed > 0 && result.results) {
+        const failedResults = result.results.filter(r => !r.success);
+        responseData.failureDetails = failedResults.map(r => ({
+          code: r.error?.code || 'unknown',
+          message: r.error?.message || r.error || 'Unknown error'
+        }));
+      }
+
+      return responseHelper.success(res, responseData, `Notification sent to imams: ${result.successful} successful, ${result.failed} failed`);
+    } else {
+      logger.error(`Failed to send notification to imams: ${result.error}`, {
+        masjidId,
+        code: result.code,
+        error: result.error
+      });
+      return responseHelper.error(res, `Failed to send notification to imams: ${result.error}`, 500, {
+        code: result.code,
+        details: result.originalError
+      });
+    }
+  } catch (error) {
+    logger.error(`Send notification to imams error: ${error.message}`);
+    return responseHelper.error(res, 'Failed to send notification to imams', 500);
   }
 };
 

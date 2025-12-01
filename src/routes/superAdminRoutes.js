@@ -35,5 +35,8 @@ router.get('/list', superAdminController.getAllSuperAdmins);
 router.get('/api-key', superAdminController.getApiKey);
 router.post('/api-key/generate', superAdminController.generateApiKey);
 
+// Send notification to imams
+router.post('/notifications/send-to-imams', superAdminValidator.sendNotificationToImamsValidator, validate, superAdminController.sendNotificationToImams);
+
 module.exports = router;
 
