@@ -627,29 +627,57 @@ async function sendQuestionReplyNotification(masjid, question, reply, replierNam
       targetSubscriptions = allSubscriptions.filter(sub => sub.user_id === question.user_id);
       logger.info(`Matching by user_id for question ${question.id}: found ${targetSubscriptions.length} subscriptions`);
     } else if (question.device_id) {
-      // Question device_id is a hash (32 chars), subscription device_id might be raw
-      // Try exact match first
+      // Question device_id is a hash (32 chars), subscription device_id might be raw or also hashed
+      // Try exact match first (handles case where both are hashed or both are raw)
       targetSubscriptions = allSubscriptions.filter(sub => 
         !sub.user_id && sub.device_id && sub.device_id === question.device_id
       );
       
       logger.info(`Question ${question.id} device_id: ${question.device_id}, checking ${allSubscriptions.filter(s => !s.user_id && s.device_id).length} anonymous subscriptions`);
       
-      // If no exact match, the question's device_id is likely a hash while subscription has raw device_id
-      // Try to match by generating hash from subscription device_ids (if we had platform/appVersion)
-      // For now, we'll use a more targeted approach: check if question device_id looks like a hash (32 hex chars)
-      // and if so, we need to match differently
-      if (targetSubscriptions.length === 0) {
-        // Question device_id is a hash (from generateDeviceId), subscription has raw device_id
-        // We can't reverse the hash, but we can try to match by checking all anonymous subscriptions
-        // that have the same masjid. This is a fallback - ideally subscriptions should also use hashed device_id
+      // If no exact match, try to match by hashing subscription device_ids
+      // Question device_id is a hash (32 hex chars from generateDeviceId)
+      // Subscription device_id might be raw, so we need to hash it to compare
+      if (targetSubscriptions.length === 0 && question.device_id.length === 32 && /^[a-f0-9]{32}$/i.test(question.device_id)) {
+        // Question device_id is a hash, try to match by hashing subscription device_ids
+        // Try common platform/appVersion combinations
         const anonymousSubs = allSubscriptions.filter(sub => !sub.user_id && sub.device_id);
-        logger.info(`No exact device_id match for question ${question.id} (hash: ${question.device_id}), found ${anonymousSubs.length} anonymous subscriptions. Using all anonymous subscriptions as fallback.`);
+        const commonPlatforms = ['android', 'ios', 'web'];
+        const commonAppVersions = ['', '1.0.0', '1.0'];
         
-        // Use all anonymous subscriptions as fallback - this ensures notification is sent
-        // Note: This is a workaround for the device_id format mismatch
-        targetSubscriptions = anonymousSubs;
-      } else {
+        for (const sub of anonymousSubs) {
+          // Skip if subscription device_id is already a hash (32 hex chars)
+          if (sub.device_id.length === 32 && /^[a-f0-9]{32}$/i.test(sub.device_id)) {
+            continue; // Already a hash, exact match would have caught it
+          }
+          
+          // Try hashing with common platform/appVersion combinations
+          for (const platform of commonPlatforms) {
+            for (const appVersion of commonAppVersions) {
+              try {
+                const hashedDeviceId = generateDeviceId(sub.device_id, platform, appVersion);
+                if (hashedDeviceId === question.device_id) {
+                  targetSubscriptions.push(sub);
+                  logger.info(`Matched question ${question.id} device_id by hashing subscription device_id with platform=${platform}, appVersion=${appVersion}`);
+                  break; // Found match, no need to try other combinations
+                }
+              } catch (err) {
+                // Skip invalid device_id
+                continue;
+              }
+            }
+            if (targetSubscriptions.length > 0 && targetSubscriptions.includes(sub)) {
+              break; // Already matched this subscription
+            }
+          }
+        }
+        
+        if (targetSubscriptions.length === 0) {
+          logger.warn(`No device_id match found for question ${question.id} (hash: ${question.device_id}). Tried hashing ${anonymousSubs.length} subscription device_ids with common platform/appVersion combinations but no match found.`);
+        } else {
+          logger.info(`Matched question ${question.id} device_id by hashing: found ${targetSubscriptions.length} subscriptions`);
+        }
+      } else if (targetSubscriptions.length > 0) {
         logger.info(`Exact device_id match found for question ${question.id}: ${targetSubscriptions.length} subscriptions`);
       }
     } else {
