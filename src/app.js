@@ -102,6 +102,32 @@ app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 // API routes
 app.use(`/api/${process.env.API_VERSION || 'v1'}`, routes);
 
+// Privacy Policy route (direct access)
+app.get('/alasr/privacy-policy', (req, res) => {
+  try {
+    const privacyPolicyPath = path.join(__dirname, '..', 'alasr', 'privacy-policy.html');
+    
+    // Check if file exists
+    if (!fs.existsSync(privacyPolicyPath)) {
+      return res.status(404).json({
+        success: false,
+        message: 'Privacy policy not found'
+      });
+    }
+    
+    // Read and send the HTML file
+    const htmlContent = fs.readFileSync(privacyPolicyPath, 'utf8');
+    res.setHeader('Content-Type', 'text/html');
+    res.status(200).send(htmlContent);
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error loading privacy policy',
+      error: error.message
+    });
+  }
+});
+
 // Root route
 app.get('/', (req, res) => {
   res.json({
@@ -117,7 +143,9 @@ app.get('/', (req, res) => {
       prayerTimes: '/api/v1/prayer-times',
       questions: '/api/v1/questions',
       notifications: '/api/v1/notifications',
-      events: '/api/v1/events'
+      events: '/api/v1/events',
+      privacyPolicy: '/api/v1/privacy-policy',
+      privacyPolicyDirect: '/alasr/privacy-policy'
     }
   });
 });

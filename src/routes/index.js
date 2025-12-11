@@ -1,5 +1,6 @@
 const express = require('express');
 const fs = require('fs');
+const path = require('path');
 const router = express.Router();
 
 // Import route modules
@@ -57,6 +58,32 @@ router.get('/firebase/test', (req, res) => {
   }
 
   return res.status(200).json(response);
+});
+
+// Privacy Policy endpoint
+router.get('/privacy-policy', (req, res) => {
+  try {
+    const privacyPolicyPath = path.join(__dirname, '..', '..', 'alasr', 'privacy-policy.html');
+    
+    // Check if file exists
+    if (!fs.existsSync(privacyPolicyPath)) {
+      return res.status(404).json({
+        success: false,
+        message: 'Privacy policy not found'
+      });
+    }
+    
+    // Read and send the HTML file
+    const htmlContent = fs.readFileSync(privacyPolicyPath, 'utf8');
+    res.setHeader('Content-Type', 'text/html');
+    res.status(200).send(htmlContent);
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error loading privacy policy',
+      error: error.message
+    });
+  }
 });
 
 // Mount routes
