@@ -86,6 +86,32 @@ router.get('/privacy-policy', (req, res) => {
   }
 });
 
+// Terms of Service endpoint
+router.get('/terms-of-service', (req, res) => {
+  try {
+    const termsOfServicePath = path.join(__dirname, '..', '..', 'alasr', 'terms-of-service.html');
+    
+    // Check if file exists
+    if (!fs.existsSync(termsOfServicePath)) {
+      return res.status(404).json({
+        success: false,
+        message: 'Terms of service not found'
+      });
+    }
+    
+    // Read and send the HTML file
+    const htmlContent = fs.readFileSync(termsOfServicePath, 'utf8');
+    res.setHeader('Content-Type', 'text/html');
+    res.status(200).send(htmlContent);
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error loading terms of service',
+      error: error.message
+    });
+  }
+});
+
 // Mount routes
 router.use('/auth', authRoutes);
 router.use('/users', userRoutes);

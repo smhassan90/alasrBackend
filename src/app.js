@@ -128,6 +128,32 @@ app.get('/alasr/privacy-policy', (req, res) => {
   }
 });
 
+// Terms of Service route (direct access)
+app.get('/alasr/terms-of-service', (req, res) => {
+  try {
+    const termsOfServicePath = path.join(__dirname, '..', 'alasr', 'terms-of-service.html');
+    
+    // Check if file exists
+    if (!fs.existsSync(termsOfServicePath)) {
+      return res.status(404).json({
+        success: false,
+        message: 'Terms of service not found'
+      });
+    }
+    
+    // Read and send the HTML file
+    const htmlContent = fs.readFileSync(termsOfServicePath, 'utf8');
+    res.setHeader('Content-Type', 'text/html');
+    res.status(200).send(htmlContent);
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error loading terms of service',
+      error: error.message
+    });
+  }
+});
+
 // Root route
 app.get('/', (req, res) => {
   res.json({
@@ -145,7 +171,9 @@ app.get('/', (req, res) => {
       notifications: '/api/v1/notifications',
       events: '/api/v1/events',
       privacyPolicy: '/api/v1/privacy-policy',
-      privacyPolicyDirect: '/alasr/privacy-policy'
+      privacyPolicyDirect: '/alasr/privacy-policy',
+      termsOfService: '/api/v1/terms-of-service',
+      termsOfServiceDirect: '/alasr/terms-of-service'
     }
   });
 });
