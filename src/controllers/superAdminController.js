@@ -270,18 +270,16 @@ exports.createUser = async (req, res) => {
       return responseHelper.error(res, 'Email already registered', 400);
     }
 
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    // Create user
+    // Create user - password will be hashed by the User model's beforeCreate hook
     const user = await User.create({
       name,
       email,
-      password: hashedPassword,
+      password: password, // Pass raw password - model hook will hash it
       phone: phone || null,
       is_super_admin,
       is_active: true,
-      email_verified: true // Auto-verify for super admin created users
+      email_verified: true, // Auto-verify for super admin created users
+      auth_provider: 'local' // Ensure auth_provider is set so hook processes password
     }, { transaction });
 
     // If masjid assignment is provided, assign user to masjid
