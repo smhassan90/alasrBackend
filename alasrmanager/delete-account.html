@@ -70,6 +70,7 @@
             color: #555;
         }
 
+        .form-input,
         input[type="text"],
         input[type="email"],
         input[type="password"] {
@@ -78,15 +79,28 @@
             border: 1px solid #ddd;
             border-radius: 4px;
             font-size: 14px;
-            transition: border-color 0.3s;
+            transition: border-color 0.3s, box-shadow 0.3s;
+            box-sizing: border-box;
+            font-family: inherit;
+            background-color: #fff;
+            display: block;
+            margin: 0;
         }
 
+        .form-input:focus,
         input[type="text"]:focus,
         input[type="email"]:focus,
         input[type="password"]:focus {
             outline: none;
             border-color: #007F5F;
             box-shadow: 0 0 0 3px rgba(0, 127, 95, 0.1);
+        }
+
+        .form-input:hover,
+        input[type="text"]:hover,
+        input[type="email"]:hover,
+        input[type="password"]:hover {
+            border-color: #bbb;
         }
 
         .help-text {
@@ -263,6 +277,7 @@
                     placeholder="Enter your email address"
                     required
                     autocomplete="email"
+                    class="form-input"
                 >
             </div>
 
@@ -275,6 +290,7 @@
                     placeholder="Enter your password"
                     required
                     autocomplete="current-password"
+                    class="form-input"
                 >
                 <div class="help-text">
                     Enter your account password to confirm account deletion.
@@ -313,13 +329,27 @@
             return `${protocol}//${host}/api/${apiVersion}`;
         };
 
-        // Enable/disable delete button based on checkbox
+        // Enable/disable delete button based on form validation
         const confirmCheckbox = document.getElementById('confirmDelete');
         const deleteBtn = document.getElementById('deleteBtn');
+        const emailInput = document.getElementById('email');
+        const passwordInput = document.getElementById('password');
         
-        confirmCheckbox.addEventListener('change', function() {
-            deleteBtn.disabled = !this.checked;
-        });
+        function updateDeleteButtonState() {
+            const emailFilled = emailInput.value.trim().length > 0;
+            const passwordFilled = passwordInput.value.length > 0;
+            const checkboxChecked = confirmCheckbox.checked;
+            
+            deleteBtn.disabled = !(emailFilled && passwordFilled && checkboxChecked);
+        }
+        
+        // Add event listeners to all form fields
+        confirmCheckbox.addEventListener('change', updateDeleteButtonState);
+        emailInput.addEventListener('input', updateDeleteButtonState);
+        passwordInput.addEventListener('input', updateDeleteButtonState);
+        
+        // Initial check
+        updateDeleteButtonState();
 
         // Handle form submission
         document.getElementById('deleteAccountForm').addEventListener('submit', async function(e) {
