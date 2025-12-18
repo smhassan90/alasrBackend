@@ -385,40 +385,34 @@
                 return;
             }
             
+            // Function to update button state
             function updateDeleteButtonState() {
-                try {
-                    const emailFilled = emailInput.value.trim().length > 0;
-                    const passwordFilled = passwordInput.value.length > 0;
-                    const checkboxChecked = confirmCheckbox.checked;
-                    
-                    deleteBtn.disabled = !(emailFilled && passwordFilled && checkboxChecked);
-                } catch (error) {
-                    console.error('Error updating button state:', error);
+                const email = (emailInput.value || '').trim();
+                const password = passwordInput.value || '';
+                const isChecked = confirmCheckbox.checked;
+                
+                const isValid = email.length > 0 && password.length > 0 && isChecked;
+                
+                // Remove disabled attribute if valid, add if not valid
+                if (isValid) {
+                    deleteBtn.removeAttribute('disabled');
+                } else {
+                    deleteBtn.setAttribute('disabled', 'disabled');
                 }
             }
             
-            // Add event listeners to all form fields
-            if (confirmCheckbox) {
-                confirmCheckbox.addEventListener('change', updateDeleteButtonState);
-                confirmCheckbox.addEventListener('click', updateDeleteButtonState);
-            }
-            if (emailInput) {
-                emailInput.addEventListener('input', updateDeleteButtonState);
-                emailInput.addEventListener('keyup', updateDeleteButtonState);
-                emailInput.addEventListener('paste', function() {
-                    setTimeout(updateDeleteButtonState, 10);
-                });
-            }
-            if (passwordInput) {
-                passwordInput.addEventListener('input', updateDeleteButtonState);
-                passwordInput.addEventListener('keyup', updateDeleteButtonState);
-                passwordInput.addEventListener('paste', function() {
-                    setTimeout(updateDeleteButtonState, 10);
-                });
-            }
+            // Add event listeners
+            confirmCheckbox.onchange = updateDeleteButtonState;
+            confirmCheckbox.onclick = updateDeleteButtonState;
+            emailInput.oninput = updateDeleteButtonState;
+            emailInput.onkeyup = updateDeleteButtonState;
+            emailInput.onpaste = function() { setTimeout(updateDeleteButtonState, 10); };
+            passwordInput.oninput = updateDeleteButtonState;
+            passwordInput.onkeyup = updateDeleteButtonState;
+            passwordInput.onpaste = function() { setTimeout(updateDeleteButtonState, 10); };
             
-            // Initial check after a small delay to ensure DOM is ready
-            setTimeout(updateDeleteButtonState, 100);
+            // Initial state check
+            updateDeleteButtonState();
 
             // Handle form submission
             const form = document.getElementById('deleteAccountForm');
