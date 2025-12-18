@@ -12,6 +12,7 @@ router.post('/forgot-password', authValidator.forgotPasswordValidator, validate,
 router.post('/reset-password', authValidator.resetPasswordValidator, validate, authController.resetPassword);
 router.post('/verify-email', authValidator.verifyEmailValidator, validate, authController.verifyEmail);
 router.post('/refresh-token', authController.refreshToken);
+router.post('/delete-account', authValidator.deleteAccountValidator, validate, authController.deleteAccount);
 
 // Google OAuth routes (for general users)
 router.get('/google/redirect', authController.googleRedirect);

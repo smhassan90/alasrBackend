@@ -75,3 +75,14 @@ exports.changePasswordValidator = [
     .custom((value, { req }) => value === req.body.newPassword).withMessage('Passwords do not match')
 ];
 
+exports.deleteAccountValidator = [
+  body('email')
+    .trim()
+    .notEmpty().withMessage('Email is required')
+    .isEmail().withMessage('Please provide a valid email address')
+    .normalizeEmail(),
+  
+  body('password')
+    .notEmpty().withMessage('Password is required')
+];
+

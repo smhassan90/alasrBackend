@@ -253,17 +253,29 @@
 
         <form id="deleteAccountForm">
             <div class="form-group">
-                <label for="accessToken">Access Token *</label>
+                <label for="email">Email Address *</label>
+                <input 
+                    type="email" 
+                    id="email" 
+                    name="email" 
+                    placeholder="Enter your email address"
+                    required
+                    autocomplete="email"
+                >
+            </div>
+
+            <div class="form-group">
+                <label for="password">Password *</label>
                 <input 
                     type="password" 
-                    id="accessToken" 
-                    name="accessToken" 
-                    placeholder="Enter your access token"
+                    id="password" 
+                    name="password" 
+                    placeholder="Enter your password"
                     required
+                    autocomplete="current-password"
                 >
                 <div class="help-text">
-                    You can find your access token in the app's settings or after logging in. 
-                    The token is required to authenticate the deletion request.
+                    Enter your account password to confirm account deletion.
                 </div>
             </div>
 
@@ -299,13 +311,6 @@
             return `${protocol}//${host}/api/${apiVersion}`;
         };
 
-        // Get token from URL parameter if present
-        const urlParams = new URLSearchParams(window.location.search);
-        const tokenParam = urlParams.get('token');
-        if (tokenParam) {
-            document.getElementById('accessToken').value = tokenParam;
-        }
-
         // Enable/disable delete button based on checkbox
         const confirmCheckbox = document.getElementById('confirmDelete');
         const deleteBtn = document.getElementById('deleteBtn');
@@ -318,13 +323,14 @@
         document.getElementById('deleteAccountForm').addEventListener('submit', async function(e) {
             e.preventDefault();
 
-            const accessToken = document.getElementById('accessToken').value.trim();
+            const email = document.getElementById('email').value.trim();
+            const password = document.getElementById('password').value;
             const messageDiv = document.getElementById('message');
             const loadingDiv = document.getElementById('loading');
             const form = document.getElementById('deleteAccountForm');
 
-            if (!accessToken) {
-                showMessage('Please enter your access token', 'error');
+            if (!email || !password) {
+                showMessage('Please enter both email and password', 'error');
                 return;
             }
 
@@ -334,14 +340,17 @@
             messageDiv.className = 'message';
 
             try {
-                const apiUrl = `${getApiBaseUrl()}/users/account`;
+                const apiUrl = `${getApiBaseUrl()}/auth/delete-account`;
                 
                 const response = await fetch(apiUrl, {
-                    method: 'DELETE',
+                    method: 'POST',
                     headers: {
-                        'Authorization': `Bearer ${accessToken}`,
                         'Content-Type': 'application/json'
-                    }
+                    },
+                    body: JSON.stringify({
+                        email: email,
+                        password: password
+                    })
                 });
 
                 const data = await response.json();
@@ -355,7 +364,7 @@
                     }, 3000);
                 } else {
                     form.style.display = 'block';
-                    const errorMsg = data.message || 'Failed to delete account. Please check your access token and try again.';
+                    const errorMsg = data.message || 'Failed to delete account. Please check your email and password.';
                     showMessage(`❌ ${errorMsg}`, 'error');
                 }
             } catch (error) {

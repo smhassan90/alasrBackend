@@ -446,7 +446,45 @@ exports.googleLogin = async (req, res) => {
     if (error.response?.status === 401) {
       return responseHelper.unauthorized(res, 'Invalid Google access token');
     }
-    return responseHelper.error(res, error.response?.data?.error_description || 'Failed to authenticate with Google', 401);
+      return responseHelper.error(res, error.response?.data?.error_description || 'Failed to authenticate with Google', 401);
+  }
+};
+
+/**
+ * Delete user account with email and password (public endpoint)
+ * @route POST /api/auth/delete-account
+ */
+exports.deleteAccount = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    // Find user
+    const user = await User.findOne({ where: { email } });
+    if (!user) {
+      return responseHelper.unauthorized(res, 'Invalid email or password');
+    }
+
+    // Check if user is already deactivated
+    if (!user.is_active) {
+      return responseHelper.error(res, 'Account is already deactivated', 400);
+    }
+
+    // Verify password
+    const isPasswordValid = await user.comparePassword(password);
+    if (!isPasswordValid) {
+      return responseHelper.unauthorized(res, 'Invalid email or password');
+    }
+
+    // Soft delete - deactivate account
+    user.is_active = false;
+    await user.save();
+
+    logger.info(`Account deleted via web page for user: ${user.email}`);
+
+    return responseHelper.success(res, null, 'Account deleted successfully');
+  } catch (error) {
+    logger.error(`Delete account error: ${error.message}`);
+    return responseHelper.error(res, 'Failed to delete account', 500, error.message);
   }
 };
 
