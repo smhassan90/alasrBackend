@@ -359,120 +359,112 @@
 
     <script>
         // Get API base URL from current location
-        const getApiBaseUrl = () => {
+        function getApiBaseUrl() {
             const protocol = window.location.protocol;
             const host = window.location.host;
-            const apiVersion = 'v1'; // Default API version
+            const apiVersion = 'v1';
             return `${protocol}//${host}/api/${apiVersion}`;
-        };
+        }
 
-        // Enable/disable delete button based on form validation
+        // Get form elements
         const confirmCheckbox = document.getElementById('confirmDelete');
         const deleteBtn = document.getElementById('deleteBtn');
         const emailInput = document.getElementById('email');
         const passwordInput = document.getElementById('password');
         
-        // Check if elements exist
-        if (!confirmCheckbox || !deleteBtn || !emailInput || !passwordInput) {
-            console.error('Form elements not found:', {
-                confirmCheckbox: !!confirmCheckbox,
-                deleteBtn: !!deleteBtn,
-                emailInput: !!emailInput,
-                passwordInput: !!passwordInput
-            });
-        } else {
-            // Function to update button state
-            function updateDeleteButtonState() {
-                const email = (emailInput.value || '').trim();
-                const password = passwordInput.value || '';
-                const isChecked = confirmCheckbox.checked;
-                
-                const isValid = email.length > 0 && password.length > 0 && isChecked;
-                
-                // Remove disabled attribute if valid, add if not valid
-                if (isValid) {
-                    deleteBtn.removeAttribute('disabled');
-                } else {
-                    deleteBtn.setAttribute('disabled', 'disabled');
-                }
+        console.log('Elements found:', {
+            confirmCheckbox: !!confirmCheckbox,
+            deleteBtn: !!deleteBtn,
+            emailInput: !!emailInput,
+            passwordInput: !!passwordInput
+        });
+        
+        // Function to update button state - using DOM property, not attributes
+        function updateDeleteButtonState() {
+            if (!confirmCheckbox || !deleteBtn || !emailInput || !passwordInput) {
+                return;
             }
             
-            // Add event listeners
-            confirmCheckbox.onchange = updateDeleteButtonState;
-            confirmCheckbox.onclick = updateDeleteButtonState;
-            emailInput.oninput = updateDeleteButtonState;
-            emailInput.onkeyup = updateDeleteButtonState;
-            emailInput.onpaste = function() { setTimeout(updateDeleteButtonState, 10); };
-            passwordInput.oninput = updateDeleteButtonState;
-            passwordInput.onkeyup = updateDeleteButtonState;
-            passwordInput.onpaste = function() { setTimeout(updateDeleteButtonState, 10); };
+            const email = emailInput.value.trim();
+            const password = passwordInput.value;
+            const isChecked = confirmCheckbox.checked;
+            
+            // Use DOM property, not attribute - this is the correct way
+            deleteBtn.disabled = !(email && password && isChecked);
+        }
+        
+        // Use form-level event listeners - handles all inputs, checkboxes, and autofill
+        const form = document.getElementById('deleteAccountForm');
+        if (form && deleteBtn && confirmCheckbox && emailInput && passwordInput) {
+            form.addEventListener('input', updateDeleteButtonState);
+            form.addEventListener('change', updateDeleteButtonState);
             
             // Initial state check
             updateDeleteButtonState();
+        }
 
-            // Handle form submission
-            const form = document.getElementById('deleteAccountForm');
-            if (form) {
-                form.addEventListener('submit', async function(e) {
-                    e.preventDefault();
+        // Handle form submission
+        const form = document.getElementById('deleteAccountForm');
+        if (form) {
+            form.addEventListener('submit', async function(e) {
+                e.preventDefault();
 
-                    const email = emailInput.value.trim();
-                    const password = passwordInput.value;
-                    const messageDiv = document.getElementById('message');
-                    const loadingDiv = document.getElementById('loading');
-
-                    if (!email || !password) {
-                        showMessage('Please enter both email and password', 'error');
-                        return;
-                    }
-
-                    // Show loading
-                    loadingDiv.classList.add('active');
-                    form.style.display = 'none';
-                    messageDiv.className = 'message';
-
-                    try {
-                        const apiUrl = `${getApiBaseUrl()}/auth/delete-account`;
-                        
-                        const response = await fetch(apiUrl, {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json'
-                            },
-                            body: JSON.stringify({
-                                email: email,
-                                password: password
-                            })
-                        });
-
-                        const data = await response.json();
-
-                        loadingDiv.classList.remove('active');
-
-                        if (response.ok && data.success) {
-                            showMessage('✅ Your account has been successfully deleted. You will be redirected shortly...', 'success');
-                            setTimeout(() => {
-                                window.location.href = '/';
-                            }, 3000);
-                        } else {
-                            form.style.display = 'block';
-                            const errorMsg = data.message || 'Failed to delete account. Please check your email and password.';
-                            showMessage(`❌ ${errorMsg}`, 'error');
-                        }
-                    } catch (error) {
-                        loadingDiv.classList.remove('active');
-                        form.style.display = 'block';
-                        showMessage(`❌ An error occurred: ${error.message}. Please try again later.`, 'error');
-                    }
-                });
-            }
-
-            function showMessage(message, type) {
+                const email = emailInput ? emailInput.value.trim() : '';
+                const password = passwordInput ? passwordInput.value : '';
                 const messageDiv = document.getElementById('message');
-                if (messageDiv) {
-                    messageDiv.textContent = message;
-                    messageDiv.className = `message ${type}`;
+                const loadingDiv = document.getElementById('loading');
+
+                if (!email || !password) {
+                    showMessage('Please enter both email and password', 'error');
+                    return;
                 }
+
+                // Show loading
+                if (loadingDiv) loadingDiv.classList.add('active');
+                if (form) form.style.display = 'none';
+                if (messageDiv) messageDiv.className = 'message';
+
+                try {
+                    const apiUrl = `${getApiBaseUrl()}/auth/delete-account`;
+                    
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            email: email,
+                            password: password
+                        })
+                    });
+
+                    const data = await response.json();
+
+                    if (loadingDiv) loadingDiv.classList.remove('active');
+
+                    if (response.ok && data.success) {
+                        showMessage('✅ Your account has been successfully deleted. You will be redirected shortly...', 'success');
+                        setTimeout(() => {
+                            window.location.href = '/';
+                        }, 3000);
+                    } else {
+                        if (form) form.style.display = 'block';
+                        const errorMsg = data.message || 'Failed to delete account. Please check your email and password.';
+                        showMessage(`❌ ${errorMsg}`, 'error');
+                    }
+                } catch (error) {
+                    if (loadingDiv) loadingDiv.classList.remove('active');
+                    if (form) form.style.display = 'block';
+                    showMessage(`❌ An error occurred: ${error.message}. Please try again later.`, 'error');
+                }
+            });
+        }
+
+        function showMessage(message, type) {
+            const messageDiv = document.getElementById('message');
+            if (messageDiv) {
+                messageDiv.textContent = message;
+                messageDiv.className = `message ${type}`;
             }
         }
     </script>
