@@ -44,7 +44,12 @@ function showSuccessDialog(message) {
 
 function closeSuccessDialog() {
     successDialog.classList.remove('active');
-    window.location.href = '/';
+    // Clear form fields
+    if (emailInput) emailInput.value = '';
+    if (passwordInput) passwordInput.value = '';
+    if (confirmCheckbox) confirmCheckbox.checked = false;
+    // Show form again
+    if (form) form.style.display = 'block';
 }
 
 // Add event listeners to close buttons
@@ -115,7 +120,7 @@ form.addEventListener('submit', async function(e) {
             // Ensure error dialog is closed
             errorDialog.classList.remove('active');
             // Show success dialog
-            showSuccessDialog('Your account has been successfully deleted. You will be redirected to the home page.');
+            showSuccessDialog('Your account has been successfully deleted.');
         } else {
             form.style.display = 'block';
             // Ensure success dialog is closed
