@@ -17,7 +17,6 @@
             color: #333;
             background-color: #f5f5f5;
             padding: 20px;
-            min-height: 100vh;
         }
 
         .container {
@@ -29,47 +28,11 @@
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
 
-
-        .header {
-            text-align: center;
-            margin-bottom: 30px;
-            padding-bottom: 20px;
-            border-bottom: 3px solid #007F5F;
-        }
-
-        .header-icon {
-            font-size: 48px;
-            margin-bottom: 15px;
-            display: block;
-        }
-
         h1 {
             color: #007F5F;
-            font-size: 28px;
-            font-weight: 600;
-            margin-bottom: 8px;
+            border-bottom: 3px solid #007F5F;
             padding-bottom: 10px;
-        }
-
-        .subtitle {
-            color: #888;
-            font-size: 14px;
-            font-weight: 400;
-            font-style: italic;
-        }
-
-        .warning-box {
-            background-color: #fff3cd;
-            border-left: 4px solid #ffc107;
-            padding: 20px;
-            border-radius: 4px;
-            margin: 20px 0;
-        }
-
-        .warning-box strong {
-            color: #856404;
-            display: block;
-            margin-bottom: 8px;
+            margin-bottom: 20px;
         }
 
         .danger-box {
@@ -82,12 +45,22 @@
 
         .danger-box strong {
             color: #721c24;
-            display: block;
-            margin-bottom: 8px;
+        }
+
+        .warning-box {
+            background-color: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 20px;
+            border-radius: 4px;
+            margin: 20px 0;
+        }
+
+        .warning-box strong {
+            color: #856404;
         }
 
         .form-group {
-            margin-bottom: 24px;
+            margin-bottom: 20px;
         }
 
         label {
@@ -97,8 +70,6 @@
             color: #555;
         }
 
-        .form-input,
-        input[type="text"],
         input[type="email"],
         input[type="password"] {
             width: 100%;
@@ -106,36 +77,14 @@
             border: 1px solid #ddd;
             border-radius: 4px;
             font-size: 14px;
-            transition: border-color 0.3s, box-shadow 0.3s;
-            box-sizing: border-box;
             font-family: inherit;
-            background-color: #fff;
-            display: block;
-            margin: 0;
-            color: #333;
         }
 
-        .form-input:focus,
-        input[type="text"]:focus,
         input[type="email"]:focus,
         input[type="password"]:focus {
             outline: none;
             border-color: #007F5F;
             box-shadow: 0 0 0 3px rgba(0, 127, 95, 0.1);
-        }
-
-        .form-input:hover,
-        input[type="text"]:hover,
-        input[type="email"]:hover,
-        input[type="password"]:hover {
-            border-color: #bbb;
-        }
-
-        .help-text {
-            font-size: 13px;
-            color: #7f8c8d;
-            margin-top: 8px;
-            line-height: 1.5;
         }
 
         .checkbox-group {
@@ -147,13 +96,10 @@
         .checkbox-group input[type="checkbox"] {
             margin-right: 10px;
             margin-top: 3px;
-            width: auto;
-            cursor: pointer;
         }
 
         .checkbox-group label {
             font-weight: normal;
-            margin-bottom: 0;
             cursor: pointer;
         }
 
@@ -164,9 +110,9 @@
             font-size: 16px;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.3s;
             width: 100%;
             margin-top: 10px;
+            transition: background-color 0.3s;
         }
 
         .btn-danger {
@@ -216,8 +162,7 @@
         .loading {
             display: none;
             text-align: center;
-            margin: 30px 0;
-            padding: 30px;
+            margin: 20px 0;
         }
 
         .loading.active {
@@ -246,21 +191,14 @@
             margin: 20px 0;
         }
 
-        .info-box p {
-            margin: 5px 0;
-        }
-
         ul {
-            margin-left: 22px;
-            margin-top: 12px;
+            margin-left: 20px;
+            margin-top: 10px;
         }
 
         li {
-            margin-bottom: 8px;
-            color: #495057;
-            line-height: 1.7;
+            margin-bottom: 5px;
         }
-
 
         @media (max-width: 768px) {
             .container {
@@ -275,11 +213,7 @@
 </head>
 <body>
     <div class="container">
-        <div class="header">
-            <span class="header-icon">🗑️</span>
-            <h1>Delete Account</h1>
-            <p class="subtitle">Permanently remove your account from AlAsr Manager</p>
-        </div>
+        <h1>Delete Account</h1>
 
         <div class="danger-box">
             <strong>⚠️ Warning: This action cannot be undone!</strong>
@@ -288,7 +222,7 @@
 
         <div class="warning-box">
             <strong>What happens when you delete your account:</strong>
-            <ul style="margin-top: 10px;">
+            <ul>
                 <li>Your account will be deactivated</li>
                 <li>You will lose access to all masajids you manage</li>
                 <li>You will no longer receive notifications</li>
@@ -307,159 +241,113 @@
         <form id="deleteAccountForm">
             <div class="form-group">
                 <label for="email">Email Address *</label>
-                <input 
-                    type="email" 
-                    id="email" 
-                    name="email" 
-                    placeholder="Enter your email address"
-                    required
-                    autocomplete="email"
-                    class="form-input"
-                >
+                <input type="email" id="email" name="email" placeholder="Enter your email address" required autocomplete="email">
             </div>
 
             <div class="form-group">
                 <label for="password">Password *</label>
-                <input 
-                    type="password" 
-                    id="password" 
-                    name="password" 
-                    placeholder="Enter your password"
-                    required
-                    autocomplete="current-password"
-                    class="form-input"
-                >
-                <div class="help-text">
-                    Enter your account password to confirm account deletion.
-                </div>
+                <input type="password" id="password" name="password" placeholder="Enter your password" required autocomplete="current-password">
             </div>
 
             <div class="checkbox-group">
                 <input type="checkbox" id="confirmDelete" name="confirmDelete" required>
                 <label for="confirmDelete">
-                    I understand that deleting my account is permanent and cannot be undone. 
-                    I want to proceed with account deletion.
+                    I understand that deleting my account is permanent and cannot be undone. I want to proceed with account deletion.
                 </label>
             </div>
 
             <div class="info-box">
-                <p><strong>Alternative:</strong> If you prefer to delete your account from within the app, 
-                go to Settings → Account → Delete Account in the AlAsr Manager app.</p>
+                <p><strong>Alternative:</strong> If you prefer to delete your account from within the app, go to Settings → Account → Delete Account in the AlAsr Manager app.</p>
             </div>
 
-            <button type="submit" class="btn btn-danger" id="deleteBtn" disabled>
-                Delete My Account
-            </button>
-
-            <button type="button" class="btn btn-secondary" onclick="window.location.href='/'">
-                Cancel
-            </button>
+            <button type="submit" class="btn btn-danger" id="deleteBtn" disabled>Delete My Account</button>
+            <button type="button" class="btn btn-secondary" onclick="window.location.href='/'">Cancel</button>
         </form>
     </div>
 
     <script>
-        // Get API base URL from current location
-        function getApiBaseUrl() {
-            const protocol = window.location.protocol;
-            const host = window.location.host;
-            const apiVersion = 'v1';
-            return `${protocol}//${host}/api/${apiVersion}`;
-        }
-
-        // Get form elements
-        const form = document.getElementById('deleteAccountForm');
-        const confirmCheckbox = document.getElementById('confirmDelete');
-        const deleteBtn = document.getElementById('deleteBtn');
+        // Get elements
         const emailInput = document.getElementById('email');
         const passwordInput = document.getElementById('password');
-        
-        // Function to update button state - using DOM property, not attributes
-        function updateDeleteButtonState() {
-            if (!confirmCheckbox || !deleteBtn || !emailInput || !passwordInput) {
-                return;
-            }
-            
+        const confirmCheckbox = document.getElementById('confirmDelete');
+        const deleteBtn = document.getElementById('deleteBtn');
+        const form = document.getElementById('deleteAccountForm');
+
+        // Function to check if button should be enabled
+        function checkButtonState() {
             const email = emailInput.value.trim();
             const password = passwordInput.value;
-            const isChecked = confirmCheckbox.checked;
+            const checked = confirmCheckbox.checked;
             
-            // Use DOM property, not attribute - this is the correct way
-            deleteBtn.disabled = !(email && password && isChecked);
+            deleteBtn.disabled = !(email && password && checked);
         }
-        
-        // Use form-level event listeners - handles all inputs, checkboxes, and autofill
-        if (form && deleteBtn && confirmCheckbox && emailInput && passwordInput) {
-            form.addEventListener('input', updateDeleteButtonState);
-            form.addEventListener('change', updateDeleteButtonState);
-            
-            // Initial state check
-            updateDeleteButtonState();
-        }
+
+        // Add event listeners
+        emailInput.addEventListener('input', checkButtonState);
+        passwordInput.addEventListener('input', checkButtonState);
+        confirmCheckbox.addEventListener('change', checkButtonState);
 
         // Handle form submission
-        if (form) {
-            form.addEventListener('submit', async function(e) {
-                e.preventDefault();
+        form.addEventListener('submit', async function(e) {
+            e.preventDefault();
 
-                const email = emailInput ? emailInput.value.trim() : '';
-                const password = passwordInput ? passwordInput.value : '';
-                const messageDiv = document.getElementById('message');
-                const loadingDiv = document.getElementById('loading');
+            const email = emailInput.value.trim();
+            const password = passwordInput.value;
+            const messageDiv = document.getElementById('message');
+            const loadingDiv = document.getElementById('loading');
 
-                if (!email || !password) {
-                    showMessage('Please enter both email and password', 'error');
-                    return;
+            if (!email || !password) {
+                showMessage('Please enter both email and password', 'error');
+                return;
+            }
+
+            // Show loading
+            loadingDiv.classList.add('active');
+            form.style.display = 'none';
+            messageDiv.className = 'message';
+
+            try {
+                const protocol = window.location.protocol;
+                const host = window.location.host;
+                const apiUrl = `${protocol}//${host}/api/v1/auth/delete-account`;
+
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        email: email,
+                        password: password
+                    })
+                });
+
+                const data = await response.json();
+                loadingDiv.classList.remove('active');
+
+                if (response.ok && data.success) {
+                    showMessage('✅ Your account has been successfully deleted. You will be redirected shortly...', 'success');
+                    setTimeout(function() {
+                        window.location.href = '/';
+                    }, 3000);
+                } else {
+                    form.style.display = 'block';
+                    const errorMsg = data.message || 'Failed to delete account. Please check your email and password.';
+                    showMessage('❌ ' + errorMsg, 'error');
                 }
+            } catch (error) {
+                loadingDiv.classList.remove('active');
+                form.style.display = 'block';
+                showMessage('❌ An error occurred: ' + error.message + '. Please try again later.', 'error');
+            }
+        });
 
-                // Show loading
-                if (loadingDiv) loadingDiv.classList.add('active');
-                if (form) form.style.display = 'none';
-                if (messageDiv) messageDiv.className = 'message';
-
-                try {
-                    const apiUrl = `${getApiBaseUrl()}/auth/delete-account`;
-                    
-                    const response = await fetch(apiUrl, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            email: email,
-                            password: password
-                        })
-                    });
-
-                    const data = await response.json();
-
-                    if (loadingDiv) loadingDiv.classList.remove('active');
-
-                    if (response.ok && data.success) {
-                        showMessage('✅ Your account has been successfully deleted. You will be redirected shortly...', 'success');
-                        setTimeout(() => {
-                            window.location.href = '/';
-                        }, 3000);
-                    } else {
-                        if (form) form.style.display = 'block';
-                        const errorMsg = data.message || 'Failed to delete account. Please check your email and password.';
-                        showMessage(`❌ ${errorMsg}`, 'error');
-                    }
-                } catch (error) {
-                    if (loadingDiv) loadingDiv.classList.remove('active');
-                    if (form) form.style.display = 'block';
-                    showMessage(`❌ An error occurred: ${error.message}. Please try again later.`, 'error');
-                }
-            });
-        }
-
+        // Function to show messages
         function showMessage(message, type) {
             const messageDiv = document.getElementById('message');
-            if (messageDiv) {
-                messageDiv.textContent = message;
-                messageDiv.className = `message ${type}`;
-            }
+            messageDiv.textContent = message;
+            messageDiv.className = 'message ' + type;
         }
     </script>
 </body>
 </html>
-
