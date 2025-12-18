@@ -367,17 +367,11 @@
         }
 
         // Get form elements
+        const form = document.getElementById('deleteAccountForm');
         const confirmCheckbox = document.getElementById('confirmDelete');
         const deleteBtn = document.getElementById('deleteBtn');
         const emailInput = document.getElementById('email');
         const passwordInput = document.getElementById('password');
-        
-        console.log('Elements found:', {
-            confirmCheckbox: !!confirmCheckbox,
-            deleteBtn: !!deleteBtn,
-            emailInput: !!emailInput,
-            passwordInput: !!passwordInput
-        });
         
         // Function to update button state - using DOM property, not attributes
         function updateDeleteButtonState() {
@@ -394,7 +388,6 @@
         }
         
         // Use form-level event listeners - handles all inputs, checkboxes, and autofill
-        const form = document.getElementById('deleteAccountForm');
         if (form && deleteBtn && confirmCheckbox && emailInput && passwordInput) {
             form.addEventListener('input', updateDeleteButtonState);
             form.addEventListener('change', updateDeleteButtonState);
@@ -404,7 +397,6 @@
         }
 
         // Handle form submission
-        const form = document.getElementById('deleteAccountForm');
         if (form) {
             form.addEventListener('submit', async function(e) {
                 e.preventDefault();
