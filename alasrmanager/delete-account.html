@@ -12,43 +12,29 @@
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
             line-height: 1.6;
-            color: #2c3e50;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            background-color: #f5f5f5;
+            padding: 20px;
             min-height: 100vh;
-            padding: 40px 20px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
         }
 
         .container {
-            max-width: 650px;
-            width: 100%;
-            background: #ffffff;
-            padding: 50px;
-            border-radius: 20px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            animation: slideUp 0.5s ease-out;
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
 
-        @keyframes slideUp {
-            from {
-                opacity: 0;
-                transform: translateY(30px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
 
         .header {
             text-align: center;
-            margin-bottom: 35px;
-            padding-bottom: 25px;
-            border-bottom: 2px solid #f0f0f0;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 3px solid #007F5F;
         }
 
         .header-icon {
@@ -58,49 +44,44 @@
         }
 
         h1 {
-            color: #2c3e50;
-            font-size: 32px;
-            font-weight: 700;
+            color: #007F5F;
+            font-size: 28px;
+            font-weight: 600;
             margin-bottom: 8px;
-            letter-spacing: -0.5px;
+            padding-bottom: 10px;
         }
 
         .subtitle {
-            color: #7f8c8d;
-            font-size: 16px;
+            color: #888;
+            font-size: 14px;
             font-weight: 400;
+            font-style: italic;
         }
 
         .warning-box {
-            background: linear-gradient(135deg, #fff9e6 0%, #fff3cd 100%);
-            border: 1px solid #ffc107;
-            border-left: 5px solid #ffc107;
-            padding: 20px 24px;
-            border-radius: 12px;
-            margin: 25px 0;
-            box-shadow: 0 2px 8px rgba(255, 193, 7, 0.15);
+            background-color: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 20px;
+            border-radius: 4px;
+            margin: 20px 0;
         }
 
         .warning-box strong {
             color: #856404;
-            font-size: 15px;
             display: block;
             margin-bottom: 8px;
         }
 
         .danger-box {
-            background: linear-gradient(135deg, #fee 0%, #f8d7da 100%);
-            border: 1px solid #dc3545;
-            border-left: 5px solid #dc3545;
-            padding: 20px 24px;
-            border-radius: 12px;
-            margin: 25px 0;
-            box-shadow: 0 2px 8px rgba(220, 53, 69, 0.15);
+            background-color: #f8d7da;
+            border-left: 4px solid #dc3545;
+            padding: 20px;
+            border-radius: 4px;
+            margin: 20px 0;
         }
 
         .danger-box strong {
             color: #721c24;
-            font-size: 15px;
             display: block;
             margin-bottom: 8px;
         }
@@ -111,11 +92,9 @@
 
         label {
             display: block;
-            margin-bottom: 10px;
+            margin-bottom: 8px;
             font-weight: 600;
-            color: #2c3e50;
-            font-size: 14px;
-            letter-spacing: 0.3px;
+            color: #555;
         }
 
         .form-input,
@@ -123,17 +102,17 @@
         input[type="email"],
         input[type="password"] {
             width: 100%;
-            padding: 14px 16px;
-            border: 2px solid #e1e8ed;
-            border-radius: 10px;
-            font-size: 15px;
-            transition: all 0.3s ease;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            transition: border-color 0.3s, box-shadow 0.3s;
             box-sizing: border-box;
             font-family: inherit;
-            background-color: #fafbfc;
+            background-color: #fff;
             display: block;
             margin: 0;
-            color: #2c3e50;
+            color: #333;
         }
 
         .form-input:focus,
@@ -141,18 +120,15 @@
         input[type="email"]:focus,
         input[type="password"]:focus {
             outline: none;
-            border-color: #667eea;
-            background-color: #fff;
-            box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
-            transform: translateY(-1px);
+            border-color: #007F5F;
+            box-shadow: 0 0 0 3px rgba(0, 127, 95, 0.1);
         }
 
         .form-input:hover,
         input[type="text"]:hover,
         input[type="email"]:hover,
         input[type="password"]:hover {
-            border-color: #cbd5e0;
-            background-color: #fff;
+            border-color: #bbb;
         }
 
         .help-text {
@@ -165,122 +141,73 @@
         .checkbox-group {
             display: flex;
             align-items: flex-start;
-            margin: 28px 0;
-            padding: 18px;
-            background: #f8f9fa;
-            border-radius: 12px;
-            border: 2px solid #e9ecef;
-            transition: all 0.3s ease;
-        }
-
-        .checkbox-group:hover {
-            border-color: #dee2e6;
-            background: #fff;
+            margin: 20px 0;
         }
 
         .checkbox-group input[type="checkbox"] {
-            margin-right: 12px;
-            margin-top: 4px;
-            width: 20px;
-            height: 20px;
+            margin-right: 10px;
+            margin-top: 3px;
+            width: auto;
             cursor: pointer;
-            accent-color: #dc3545;
         }
 
         .checkbox-group label {
-            font-weight: 500;
+            font-weight: normal;
             margin-bottom: 0;
             cursor: pointer;
-            color: #495057;
-            font-size: 14px;
-            line-height: 1.6;
-            flex: 1;
         }
 
         .btn {
-            padding: 16px 32px;
+            padding: 12px 24px;
             border: none;
-            border-radius: 12px;
+            border-radius: 4px;
             font-size: 16px;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.3s ease;
+            transition: all 0.3s;
             width: 100%;
-            margin-top: 12px;
-            letter-spacing: 0.5px;
-            text-transform: uppercase;
-            font-size: 14px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            margin-top: 10px;
         }
 
         .btn-danger {
-            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+            background-color: #dc3545;
             color: white;
         }
 
         .btn-danger:hover:not(:disabled) {
-            background: linear-gradient(135deg, #c82333 0%, #bd2130 100%);
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(220, 53, 69, 0.4);
-        }
-
-        .btn-danger:active:not(:disabled) {
-            transform: translateY(0);
+            background-color: #c82333;
         }
 
         .btn-danger:disabled {
-            background: #dee2e6;
-            color: #adb5bd;
+            background-color: #ccc;
             cursor: not-allowed;
-            box-shadow: none;
-            transform: none;
         }
 
         .btn-secondary {
-            background: linear-gradient(135deg, #6c757d 0%, #5a6268 100%);
+            background-color: #6c757d;
             color: white;
         }
 
         .btn-secondary:hover {
-            background: linear-gradient(135deg, #5a6268 0%, #495057 100%);
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(108, 117, 125, 0.4);
-        }
-
-        .btn-secondary:active {
-            transform: translateY(0);
+            background-color: #5a6268;
         }
 
         .message {
-            padding: 18px 20px;
-            border-radius: 12px;
-            margin: 25px 0;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 20px 0;
             display: none;
-            font-weight: 500;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-            animation: slideDown 0.3s ease-out;
-        }
-
-        @keyframes slideDown {
-            from {
-                opacity: 0;
-                transform: translateY(-10px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
         }
 
         .message.success {
-            background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+            background-color: #d4edda;
             border: 1px solid #c3e6cb;
             color: #155724;
             display: block;
         }
 
         .message.error {
-            background: linear-gradient(135deg, #f8d7da 0%, #f5c6cb 100%);
+            background-color: #f8d7da;
             border: 1px solid #f5c6cb;
             color: #721c24;
             display: block;
@@ -298,13 +225,13 @@
         }
 
         .spinner {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #667eea;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #007F5F;
             border-radius: 50%;
-            width: 50px;
-            height: 50px;
+            width: 40px;
+            height: 40px;
             animation: spin 1s linear infinite;
-            margin: 0 auto 15px;
+            margin: 0 auto;
         }
 
         @keyframes spin {
@@ -313,19 +240,14 @@
         }
 
         .info-box {
-            background: linear-gradient(135deg, #e7f3ff 0%, #d6e9ff 100%);
-            border: 1px solid #007F5F;
-            border-left: 5px solid #007F5F;
-            padding: 18px 20px;
-            border-radius: 12px;
-            margin: 25px 0;
-            box-shadow: 0 2px 8px rgba(0, 127, 95, 0.15);
+            background-color: #f9f9f9;
+            padding: 20px;
+            border-radius: 5px;
+            margin: 20px 0;
         }
 
         .info-box p {
             margin: 5px 0;
-            color: #004085;
-            font-size: 14px;
         }
 
         ul {
@@ -339,33 +261,14 @@
             line-height: 1.7;
         }
 
-        .danger-box p,
-        .warning-box p {
-            color: #495057;
-            line-height: 1.7;
-            margin-top: 8px;
-        }
 
         @media (max-width: 768px) {
-            body {
-                padding: 20px 15px;
-            }
-
             .container {
-                padding: 35px 25px;
-                border-radius: 16px;
+                padding: 20px;
             }
 
             h1 {
-                font-size: 26px;
-            }
-
-            .header-icon {
-                font-size: 40px;
-            }
-
-            .btn {
-                padding: 14px 24px;
+                font-size: 1.5em;
             }
         }
     </style>
@@ -455,96 +358,133 @@
     </div>
 
     <script>
-        // Get API base URL from current location
-        const getApiBaseUrl = () => {
-            const protocol = window.location.protocol;
-            const host = window.location.host;
-            const apiVersion = 'v1'; // Default API version
-            return `${protocol}//${host}/api/${apiVersion}`;
-        };
+        // Wait for DOM to be fully loaded
+        document.addEventListener('DOMContentLoaded', function() {
+            // Get API base URL from current location
+            const getApiBaseUrl = () => {
+                const protocol = window.location.protocol;
+                const host = window.location.host;
+                const apiVersion = 'v1'; // Default API version
+                return `${protocol}//${host}/api/${apiVersion}`;
+            };
 
-        // Enable/disable delete button based on form validation
-        const confirmCheckbox = document.getElementById('confirmDelete');
-        const deleteBtn = document.getElementById('deleteBtn');
-        const emailInput = document.getElementById('email');
-        const passwordInput = document.getElementById('password');
-        
-        function updateDeleteButtonState() {
-            const emailFilled = emailInput.value.trim().length > 0;
-            const passwordFilled = passwordInput.value.length > 0;
-            const checkboxChecked = confirmCheckbox.checked;
+            // Enable/disable delete button based on form validation
+            const confirmCheckbox = document.getElementById('confirmDelete');
+            const deleteBtn = document.getElementById('deleteBtn');
+            const emailInput = document.getElementById('email');
+            const passwordInput = document.getElementById('password');
             
-            deleteBtn.disabled = !(emailFilled && passwordFilled && checkboxChecked);
-        }
-        
-        // Add event listeners to all form fields
-        confirmCheckbox.addEventListener('change', updateDeleteButtonState);
-        emailInput.addEventListener('input', updateDeleteButtonState);
-        passwordInput.addEventListener('input', updateDeleteButtonState);
-        
-        // Initial check
-        updateDeleteButtonState();
-
-        // Handle form submission
-        document.getElementById('deleteAccountForm').addEventListener('submit', async function(e) {
-            e.preventDefault();
-
-            const email = document.getElementById('email').value.trim();
-            const password = document.getElementById('password').value;
-            const messageDiv = document.getElementById('message');
-            const loadingDiv = document.getElementById('loading');
-            const form = document.getElementById('deleteAccountForm');
-
-            if (!email || !password) {
-                showMessage('Please enter both email and password', 'error');
+            // Check if elements exist
+            if (!confirmCheckbox || !deleteBtn || !emailInput || !passwordInput) {
+                console.error('Form elements not found:', {
+                    confirmCheckbox: !!confirmCheckbox,
+                    deleteBtn: !!deleteBtn,
+                    emailInput: !!emailInput,
+                    passwordInput: !!passwordInput
+                });
                 return;
             }
-
-            // Show loading
-            loadingDiv.classList.add('active');
-            form.style.display = 'none';
-            messageDiv.className = 'message';
-
-            try {
-                const apiUrl = `${getApiBaseUrl()}/auth/delete-account`;
-                
-                const response = await fetch(apiUrl, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        email: email,
-                        password: password
-                    })
-                });
-
-                const data = await response.json();
-
-                loadingDiv.classList.remove('active');
-
-                if (response.ok && data.success) {
-                    showMessage('✅ Your account has been successfully deleted. You will be redirected shortly...', 'success');
-                    setTimeout(() => {
-                        window.location.href = '/';
-                    }, 3000);
-                } else {
-                    form.style.display = 'block';
-                    const errorMsg = data.message || 'Failed to delete account. Please check your email and password.';
-                    showMessage(`❌ ${errorMsg}`, 'error');
+            
+            function updateDeleteButtonState() {
+                try {
+                    const emailFilled = emailInput.value.trim().length > 0;
+                    const passwordFilled = passwordInput.value.length > 0;
+                    const checkboxChecked = confirmCheckbox.checked;
+                    
+                    deleteBtn.disabled = !(emailFilled && passwordFilled && checkboxChecked);
+                } catch (error) {
+                    console.error('Error updating button state:', error);
                 }
-            } catch (error) {
-                loadingDiv.classList.remove('active');
-                form.style.display = 'block';
-                showMessage(`❌ An error occurred: ${error.message}. Please try again later.`, 'error');
+            }
+            
+            // Add event listeners to all form fields
+            if (confirmCheckbox) {
+                confirmCheckbox.addEventListener('change', updateDeleteButtonState);
+                confirmCheckbox.addEventListener('click', updateDeleteButtonState);
+            }
+            if (emailInput) {
+                emailInput.addEventListener('input', updateDeleteButtonState);
+                emailInput.addEventListener('keyup', updateDeleteButtonState);
+                emailInput.addEventListener('paste', function() {
+                    setTimeout(updateDeleteButtonState, 10);
+                });
+            }
+            if (passwordInput) {
+                passwordInput.addEventListener('input', updateDeleteButtonState);
+                passwordInput.addEventListener('keyup', updateDeleteButtonState);
+                passwordInput.addEventListener('paste', function() {
+                    setTimeout(updateDeleteButtonState, 10);
+                });
+            }
+            
+            // Initial check after a small delay to ensure DOM is ready
+            setTimeout(updateDeleteButtonState, 100);
+
+            // Handle form submission
+            const form = document.getElementById('deleteAccountForm');
+            if (form) {
+                form.addEventListener('submit', async function(e) {
+                    e.preventDefault();
+
+                    const email = emailInput.value.trim();
+                    const password = passwordInput.value;
+                    const messageDiv = document.getElementById('message');
+                    const loadingDiv = document.getElementById('loading');
+
+                    if (!email || !password) {
+                        showMessage('Please enter both email and password', 'error');
+                        return;
+                    }
+
+                    // Show loading
+                    loadingDiv.classList.add('active');
+                    form.style.display = 'none';
+                    messageDiv.className = 'message';
+
+                    try {
+                        const apiUrl = `${getApiBaseUrl()}/auth/delete-account`;
+                        
+                        const response = await fetch(apiUrl, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                email: email,
+                                password: password
+                            })
+                        });
+
+                        const data = await response.json();
+
+                        loadingDiv.classList.remove('active');
+
+                        if (response.ok && data.success) {
+                            showMessage('✅ Your account has been successfully deleted. You will be redirected shortly...', 'success');
+                            setTimeout(() => {
+                                window.location.href = '/';
+                            }, 3000);
+                        } else {
+                            form.style.display = 'block';
+                            const errorMsg = data.message || 'Failed to delete account. Please check your email and password.';
+                            showMessage(`❌ ${errorMsg}`, 'error');
+                        }
+                    } catch (error) {
+                        loadingDiv.classList.remove('active');
+                        form.style.display = 'block';
+                        showMessage(`❌ An error occurred: ${error.message}. Please try again later.`, 'error');
+                    }
+                });
+            }
+
+            function showMessage(message, type) {
+                const messageDiv = document.getElementById('message');
+                if (messageDiv) {
+                    messageDiv.textContent = message;
+                    messageDiv.className = `message ${type}`;
+                }
             }
         });
-
-        function showMessage(message, type) {
-            const messageDiv = document.getElementById('message');
-            messageDiv.textContent = message;
-            messageDiv.className = `message ${type}`;
-        }
     </script>
 </body>
 </html>
