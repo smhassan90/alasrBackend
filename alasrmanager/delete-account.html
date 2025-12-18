@@ -252,27 +252,18 @@
             const password = passwordInput.value;
             const isChecked = confirmCheckbox.checked;
             
-            // Validation
-            if (!email) {
-                showMessage('Please enter your email address', 'error');
+            // Validation - show error if any field is missing or checkbox is not checked
+            if (!email || !password || !isChecked) {
+                showMessage('Please fill in all fields and check the confirmation box', 'error');
                 return;
             }
             
-            if (!password) {
-                showMessage('Please enter your password', 'error');
-                return;
-            }
-            
-            if (!isChecked) {
-                showMessage('Please check the confirmation box to proceed', 'error');
-                return;
-            }
-            
-            // All validations passed - proceed with deletion
+            // All validations passed - call delete API to deactivate the user
             loadingDiv.classList.add('active');
             form.style.display = 'none';
             
             try {
+                // Call delete account API - this will deactivate the user (set is_active = false)
                 const protocol = window.location.protocol;
                 const host = window.location.host;
                 const apiUrl = protocol + '//' + host + '/api/v1/auth/delete-account';
