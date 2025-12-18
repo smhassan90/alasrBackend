@@ -232,6 +232,32 @@ app.get('/alasrmanager/delete-account', (req, res) => {
   }
 });
 
+// Manager App - Delete Account JavaScript route
+app.get('/alasrmanager/delete-account.js', (req, res) => {
+  try {
+    const jsPath = path.join(__dirname, '..', 'alasrmanager', 'delete-account.js');
+    
+    // Check if file exists
+    if (!fs.existsSync(jsPath)) {
+      return res.status(404).json({
+        success: false,
+        message: 'JavaScript file not found'
+      });
+    }
+    
+    // Read and send the JavaScript file
+    const jsContent = fs.readFileSync(jsPath, 'utf8');
+    res.setHeader('Content-Type', 'application/javascript');
+    res.status(200).send(jsContent);
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error loading JavaScript file',
+      error: error.message
+    });
+  }
+});
+
 // Root route
 app.get('/', (req, res) => {
   res.json({
