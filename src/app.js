@@ -206,6 +206,32 @@ app.get('/alasrmanager/terms-of-service', (req, res) => {
   }
 });
 
+// Manager App - Delete Account route (direct access)
+app.get('/alasrmanager/delete-account', (req, res) => {
+  try {
+    const deleteAccountPath = path.join(__dirname, '..', 'alasrmanager', 'delete-account.html');
+    
+    // Check if file exists
+    if (!fs.existsSync(deleteAccountPath)) {
+      return res.status(404).json({
+        success: false,
+        message: 'Delete account page not found'
+      });
+    }
+    
+    // Read and send the HTML file
+    const htmlContent = fs.readFileSync(deleteAccountPath, 'utf8');
+    res.setHeader('Content-Type', 'text/html');
+    res.status(200).send(htmlContent);
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error loading delete account page',
+      error: error.message
+    });
+  }
+});
+
 // Root route
 app.get('/', (req, res) => {
   res.json({
@@ -227,7 +253,8 @@ app.get('/', (req, res) => {
       termsOfService: '/api/v1/terms-of-service',
       termsOfServiceDirect: '/alasr/terms-of-service',
       managerPrivacyPolicy: '/alasrmanager/privacy-policy',
-      managerTermsOfService: '/alasrmanager/terms-of-service'
+      managerTermsOfService: '/alasrmanager/terms-of-service',
+      managerDeleteAccount: '/alasrmanager/delete-account'
     }
   });
 });

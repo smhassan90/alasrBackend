@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Delete Account - AlAsr Manager Masajid Prayer Timings</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f5f5f5;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            color: #dc3545;
+            border-bottom: 3px solid #dc3545;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+
+        .warning-box {
+            background-color: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 20px;
+            border-radius: 4px;
+            margin: 20px 0;
+        }
+
+        .warning-box strong {
+            color: #856404;
+        }
+
+        .danger-box {
+            background-color: #f8d7da;
+            border-left: 4px solid #dc3545;
+            padding: 20px;
+            border-radius: 4px;
+            margin: 20px 0;
+        }
+
+        .danger-box strong {
+            color: #721c24;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #555;
+        }
+
+        input[type="text"],
+        input[type="password"] {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        input[type="text"]:focus,
+        input[type="password"]:focus {
+            outline: none;
+            border-color: #007F5F;
+            box-shadow: 0 0 0 3px rgba(0, 127, 95, 0.1);
+        }
+
+        .help-text {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: flex-start;
+            margin: 20px 0;
+        }
+
+        .checkbox-group input[type="checkbox"] {
+            margin-right: 10px;
+            margin-top: 3px;
+            width: auto;
+        }
+
+        .checkbox-group label {
+            font-weight: normal;
+            margin-bottom: 0;
+            cursor: pointer;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            width: 100%;
+            margin-top: 10px;
+        }
+
+        .btn-danger {
+            background-color: #dc3545;
+            color: white;
+        }
+
+        .btn-danger:hover:not(:disabled) {
+            background-color: #c82333;
+        }
+
+        .btn-danger:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+
+        .btn-secondary {
+            background-color: #6c757d;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background-color: #5a6268;
+        }
+
+        .message {
+            padding: 15px;
+            border-radius: 4px;
+            margin: 20px 0;
+            display: none;
+        }
+
+        .message.success {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+            display: block;
+        }
+
+        .message.error {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+            display: block;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        .loading.active {
+            display: block;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #007F5F;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .info-box {
+            background-color: #e7f3ff;
+            border-left: 4px solid #007F5F;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 20px 0;
+        }
+
+        .info-box p {
+            margin: 5px 0;
+        }
+
+        ul {
+            margin-left: 20px;
+            margin-top: 10px;
+        }
+
+        li {
+            margin-bottom: 5px;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 20px;
+            }
+
+            h1 {
+                font-size: 1.5em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🗑️ Delete Account</h1>
+
+        <div class="danger-box">
+            <strong>⚠️ Warning: This action cannot be undone!</strong>
+            <p style="margin-top: 10px;">Deleting your account will permanently deactivate it. You will lose access to all your data, masjid management permissions, and account information.</p>
+        </div>
+
+        <div class="warning-box">
+            <strong>What happens when you delete your account:</strong>
+            <ul style="margin-top: 10px;">
+                <li>Your account will be deactivated</li>
+                <li>You will lose access to all masajids you manage</li>
+                <li>You will no longer receive notifications</li>
+                <li>All your account data will be marked as inactive</li>
+                <li>You will need to contact support to reactivate your account</li>
+            </ul>
+        </div>
+
+        <div id="message" class="message"></div>
+
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p style="margin-top: 10px;">Deleting your account...</p>
+        </div>
+
+        <form id="deleteAccountForm">
+            <div class="form-group">
+                <label for="accessToken">Access Token *</label>
+                <input 
+                    type="password" 
+                    id="accessToken" 
+                    name="accessToken" 
+                    placeholder="Enter your access token"
+                    required
+                >
+                <div class="help-text">
+                    You can find your access token in the app's settings or after logging in. 
+                    The token is required to authenticate the deletion request.
+                </div>
+            </div>
+
+            <div class="checkbox-group">
+                <input type="checkbox" id="confirmDelete" name="confirmDelete" required>
+                <label for="confirmDelete">
+                    I understand that deleting my account is permanent and cannot be undone. 
+                    I want to proceed with account deletion.
+                </label>
+            </div>
+
+            <div class="info-box">
+                <p><strong>Alternative:</strong> If you prefer to delete your account from within the app, 
+                go to Settings → Account → Delete Account in the AlAsr Manager app.</p>
+            </div>
+
+            <button type="submit" class="btn btn-danger" id="deleteBtn" disabled>
+                Delete My Account
+            </button>
+
+            <button type="button" class="btn btn-secondary" onclick="window.location.href='/'">
+                Cancel
+            </button>
+        </form>
+    </div>
+
+    <script>
+        // Get API base URL from current location
+        const getApiBaseUrl = () => {
+            const protocol = window.location.protocol;
+            const host = window.location.host;
+            const apiVersion = 'v1'; // Default API version
+            return `${protocol}//${host}/api/${apiVersion}`;
+        };
+
+        // Get token from URL parameter if present
+        const urlParams = new URLSearchParams(window.location.search);
+        const tokenParam = urlParams.get('token');
+        if (tokenParam) {
+            document.getElementById('accessToken').value = tokenParam;
+        }
+
+        // Enable/disable delete button based on checkbox
+        const confirmCheckbox = document.getElementById('confirmDelete');
+        const deleteBtn = document.getElementById('deleteBtn');
+        
+        confirmCheckbox.addEventListener('change', function() {
+            deleteBtn.disabled = !this.checked;
+        });
+
+        // Handle form submission
+        document.getElementById('deleteAccountForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            const accessToken = document.getElementById('accessToken').value.trim();
+            const messageDiv = document.getElementById('message');
+            const loadingDiv = document.getElementById('loading');
+            const form = document.getElementById('deleteAccountForm');
+
+            if (!accessToken) {
+                showMessage('Please enter your access token', 'error');
+                return;
+            }
+
+            // Show loading
+            loadingDiv.classList.add('active');
+            form.style.display = 'none';
+            messageDiv.className = 'message';
+
+            try {
+                const apiUrl = `${getApiBaseUrl()}/users/account`;
+                
+                const response = await fetch(apiUrl, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                const data = await response.json();
+
+                loadingDiv.classList.remove('active');
+
+                if (response.ok && data.success) {
+                    showMessage('✅ Your account has been successfully deleted. You will be redirected shortly...', 'success');
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 3000);
+                } else {
+                    form.style.display = 'block';
+                    const errorMsg = data.message || 'Failed to delete account. Please check your access token and try again.';
+                    showMessage(`❌ ${errorMsg}`, 'error');
+                }
+            } catch (error) {
+                loadingDiv.classList.remove('active');
+                form.style.display = 'block';
+                showMessage(`❌ An error occurred: ${error.message}. Please try again later.`, 'error');
+            }
+        });
+
+        function showMessage(message, type) {
+            const messageDiv = document.getElementById('message');
+            messageDiv.textContent = message;
+            messageDiv.className = `message ${type}`;
+        }
+    </script>
+</body>
+</html>
+
