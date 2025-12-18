@@ -124,6 +124,12 @@
         .dialog-overlay.active {
             display: flex;
         }
+        #errorDialog {
+            z-index: 1001;
+        }
+        #successDialog {
+            z-index: 1002;
+        }
         .dialog {
             background-color: white;
             border-radius: 8px;
@@ -272,7 +278,7 @@
             <div class="dialog-icon">⚠️</div>
             <div class="dialog-title">Error</div>
             <div class="dialog-message" id="errorMessage"></div>
-            <button class="dialog-btn dialog-btn-primary" onclick="closeErrorDialog()">OK</button>
+            <button class="dialog-btn dialog-btn-primary" id="errorDialogCloseBtn">OK</button>
         </div>
     </div>
 
@@ -282,7 +288,7 @@
             <div class="dialog-icon">✅</div>
             <div class="dialog-title">Success</div>
             <div class="dialog-message" id="successMessage"></div>
-            <button class="dialog-btn dialog-btn-primary" onclick="closeSuccessDialog()">OK</button>
+            <button class="dialog-btn dialog-btn-primary" id="successDialogCloseBtn">OK</button>
         </div>
     </div>
 

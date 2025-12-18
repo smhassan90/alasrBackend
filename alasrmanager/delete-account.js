@@ -7,19 +7,39 @@ const errorDialog = document.getElementById('errorDialog');
 const successDialog = document.getElementById('successDialog');
 const errorMessage = document.getElementById('errorMessage');
 const successMessage = document.getElementById('successMessage');
+const errorDialogCloseBtn = document.getElementById('errorDialogCloseBtn');
+const successDialogCloseBtn = document.getElementById('successDialogCloseBtn');
 
 function showErrorDialog(message) {
-    errorMessage.textContent = message;
-    errorDialog.classList.add('active');
+    // Ensure success dialog is closed first
+    if (successDialog) {
+        successDialog.classList.remove('active');
+    }
+    // Show error dialog
+    if (errorMessage && errorDialog) {
+        errorMessage.textContent = message;
+        errorDialog.classList.add('active');
+    }
 }
 
 function closeErrorDialog() {
-    errorDialog.classList.remove('active');
+    if (errorDialog) {
+        errorDialog.classList.remove('active');
+    }
 }
 
 function showSuccessDialog(message) {
-    successMessage.textContent = message;
-    successDialog.classList.add('active');
+    // Ensure error dialog is closed first
+    if (errorDialog) {
+        errorDialog.classList.remove('active');
+    }
+    // Small delay to ensure error dialog is fully closed
+    setTimeout(function() {
+        if (successMessage && successDialog) {
+            successMessage.textContent = message;
+            successDialog.classList.add('active');
+        }
+    }, 50);
 }
 
 function closeSuccessDialog() {
@@ -27,22 +47,31 @@ function closeSuccessDialog() {
     window.location.href = '/';
 }
 
-// Make functions globally accessible for onclick handlers
-window.closeErrorDialog = closeErrorDialog;
-window.closeSuccessDialog = closeSuccessDialog;
+// Add event listeners to close buttons
+if (errorDialogCloseBtn) {
+    errorDialogCloseBtn.addEventListener('click', closeErrorDialog);
+}
+
+if (successDialogCloseBtn) {
+    successDialogCloseBtn.addEventListener('click', closeSuccessDialog);
+}
 
 // Close dialog when clicking outside
-errorDialog.addEventListener('click', function(e) {
-    if (e.target === errorDialog) {
-        closeErrorDialog();
-    }
-});
+if (errorDialog) {
+    errorDialog.addEventListener('click', function(e) {
+        if (e.target === errorDialog) {
+            closeErrorDialog();
+        }
+    });
+}
 
-successDialog.addEventListener('click', function(e) {
-    if (e.target === successDialog) {
-        closeSuccessDialog();
-    }
-});
+if (successDialog) {
+    successDialog.addEventListener('click', function(e) {
+        if (e.target === successDialog) {
+            closeSuccessDialog();
+        }
+    });
+}
 
 form.addEventListener('submit', async function(e) {
     e.preventDefault();
@@ -83,10 +112,14 @@ form.addEventListener('submit', async function(e) {
         loadingDiv.classList.remove('active');
         
         if (response.ok && data.success) {
+            // Ensure error dialog is closed
+            errorDialog.classList.remove('active');
             // Show success dialog
             showSuccessDialog('Your account has been successfully deleted. You will be redirected to the home page.');
         } else {
             form.style.display = 'block';
+            // Ensure success dialog is closed
+            successDialog.classList.remove('active');
             const errorMsg = data.message || 'Failed to delete account. Please check your email and password.';
             showErrorDialog(errorMsg);
         }
