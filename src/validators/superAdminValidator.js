@@ -149,3 +149,9 @@ exports.addImamFcmTokenValidator = [
     .isLength({ min: 10 }).withMessage('FCM token must be at least 10 characters')
 ];
 
+exports.updateAppConfigValidator = [
+  body('maxFavoritesLimit')
+    .notEmpty().withMessage('maxFavoritesLimit is required')
+    .isInt({ min: 1, max: 20 }).withMessage('maxFavoritesLimit must be an integer between 1 and 20')
+];
+

@@ -44,5 +44,9 @@ router.get('/imams/subscriptions', superAdminController.getImamSubscriptions);
 // Add/update FCM token for imam subscription (helper for testing)
 router.post('/imams/:imamId/subscription', superAdminValidator.addImamFcmTokenValidator, validate, superAdminController.addImamFcmToken);
 
+// App configuration management
+router.get('/config/app', superAdminController.getAppConfig);
+router.put('/config/app', superAdminValidator.updateAppConfigValidator, validate, superAdminController.updateAppConfig);
+
 module.exports = router;
 

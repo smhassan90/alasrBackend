@@ -41,6 +41,8 @@ const Event = require('./Event')(sequelize);
 const UserSettings = require('./UserSettings')(sequelize);
 const MasjidSubscription = require('./MasjidSubscription')(sequelize);
 const DeviceSettings = require('./DeviceSettings')(sequelize);
+const UserFavorite = require('./UserFavorite')(sequelize);
+const AppConfig = require('./AppConfig')(sequelize);
 
 // Create models object
 const models = {
@@ -54,6 +56,8 @@ const models = {
   UserSettings,
   MasjidSubscription,
   DeviceSettings,
+  UserFavorite,
+  AppConfig,
   sequelize,
   Sequelize
 };

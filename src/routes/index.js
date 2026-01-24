@@ -15,6 +15,7 @@ const eventRoutes = require('./eventRoutes');
 const subscriptionRoutes = require('./subscriptionRoutes');
 const superAdminRoutes = require('./superAdminRoutes');
 const deviceSettingsRoutes = require('./deviceSettingsRoutes');
+const favoriteRoutes = require('./favoriteRoutes');
 
 // Health check endpoint
 router.get('/health', (req, res) => {
@@ -124,6 +125,7 @@ router.use('/events', eventRoutes);
 router.use('/subscriptions', subscriptionRoutes);
 router.use('/super-admin', superAdminRoutes);
 router.use('/device-settings', deviceSettingsRoutes);
+router.use('/', favoriteRoutes); // Favorites routes (includes /users/favorites and /config/app)
 
 module.exports = router;
 

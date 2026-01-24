@@ -1,10 +1,4 @@
-const { User, Masjid, UserMasjid, MasjidSubscription, sequelize } = require('../models');
-const responseHelper = require('../utils/responseHelper');
-const logger = require('../utils/logger');
-const bcrypt = require('bcrypt');
-const crypto = require('crypto');
-const pushNotificationService = require('../utils/pushNotificationService');
-const { Op } = require('sequelize');
+const { User, Masjid, UserMasjid, MasjidSubscription, sequelize, AppConfig } = require('../models');
 
 /**
  * Get all users (Super Admin only)
@@ -1009,6 +1003,71 @@ exports.addImamFcmToken = async (req, res) => {
   } catch (error) {
     logger.error(`Add imam FCM token error: ${error.message}`);
     return responseHelper.error(res, 'Failed to add FCM token', 500);
+  }
+};
+
+/**
+ * Get app configuration (Super Admin only)
+ * @route GET /api/super-admin/config/app
+ */
+exports.getAppConfig = async (req, res) => {
+  try {
+    const config = await AppConfig.findOne({
+      where: { key: 'max_favorites_limit' }
+    });
+
+    const maxFavoritesLimit = config ? parseInt(config.value, 10) : 5;
+
+    return responseHelper.success(res, {
+      maxFavoritesLimit
+    }, 'Configuration retrieved successfully');
+  } catch (error) {
+    logger.error(`Get app config error: ${error.message}`);
+    return responseHelper.error(res, 'Failed to retrieve configuration', 500);
+  }
+};
+
+/**
+ * Update app configuration (Super Admin only)
+ * @route PUT /api/super-admin/config/app
+ */
+exports.updateAppConfig = async (req, res) => {
+  try {
+    const { maxFavoritesLimit } = req.body;
+
+    // Validate input
+    if (!maxFavoritesLimit || typeof maxFavoritesLimit !== 'number' || maxFavoritesLimit < 1 || maxFavoritesLimit > 20) {
+      return responseHelper.error(res, 'maxFavoritesLimit must be a number between 1 and 20', 400);
+    }
+
+    // Find or create config
+    let config = await AppConfig.findOne({
+      where: { key: 'max_favorites_limit' }
+    });
+
+    if (config) {
+      // Update existing config
+      config.value = maxFavoritesLimit.toString();
+      config.updated_by = req.userId;
+      await config.save();
+    } else {
+      // Create new config
+      config = await AppConfig.create({
+        key: 'max_favorites_limit',
+        value: maxFavoritesLimit.toString(),
+        description: 'Maximum number of masjids a user can add to favorites',
+        updated_by: req.userId
+      });
+    }
+
+    logger.info(`App config updated by super admin ${req.userId}: maxFavoritesLimit = ${maxFavoritesLimit}`);
+
+    return responseHelper.success(res, {
+      maxFavoritesLimit: parseInt(config.value, 10)
+    }, 'Configuration updated successfully');
+  } catch (error) {
+    logger.error(`Update app config error: ${error.message}`);
+    return responseHelper.error(res, 'Failed to update configuration', 500);
   }
 };
 
