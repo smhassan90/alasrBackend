@@ -1,4 +1,7 @@
 const { User, Masjid, UserMasjid, MasjidSubscription, sequelize, AppConfig } = require('../models');
+const responseHelper = require('../utils/responseHelper');
+const logger = require('../utils/logger');
+const { Op } = require('sequelize');
 
 /**
  * Get all users (Super Admin only)
@@ -18,12 +21,16 @@ exports.getAllUsers = async (req, res) => {
       ];
     }
 
+    // Add query timeout (25 seconds - less than Vercel's 30s limit)
+    const queryTimeout = 25000;
+
     const { count, rows: users } = await User.findAndCountAll({
       where: whereClause,
       attributes: { exclude: ['password', 'reset_password_token', 'reset_password_expires', 'email_verification_token'] },
       limit: parseInt(limit),
       offset: parseInt(offset),
-      order: [['created_at', 'DESC']]
+      order: [['created_at', 'DESC']],
+      timeout: queryTimeout
     });
 
     return responseHelper.paginated(res, users, {
@@ -33,6 +40,9 @@ exports.getAllUsers = async (req, res) => {
     }, 'Users retrieved successfully');
   } catch (error) {
     logger.error(`Get all users error: ${error.message}`);
+    if (error.name === 'SequelizeTimeoutError' || error.message.includes('timeout')) {
+      return responseHelper.error(res, 'Request timeout - database query took too long', 504);
+    }
     return responseHelper.error(res, 'Failed to retrieve users', 500);
   }
 };
