@@ -31,7 +31,7 @@ router.get('/health', (req, res) => {
 router.get('/firebase/test', (req, res) => {
   const pushNotificationService = require('../utils/pushNotificationService');
   const firebaseStatus = pushNotificationService.getFirebaseStatus();
-  
+
   const response = {
     success: firebaseStatus.initialized && firebaseStatus.hasRequiredFields,
     envPresent: firebaseStatus.envPresent,
@@ -65,7 +65,7 @@ router.get('/firebase/test', (req, res) => {
 router.get('/privacy-policy', (req, res) => {
   try {
     const privacyPolicyPath = path.join(__dirname, '..', '..', 'alasr', 'privacy-policy.html');
-    
+
     // Check if file exists
     if (!fs.existsSync(privacyPolicyPath)) {
       return res.status(404).json({
@@ -73,7 +73,7 @@ router.get('/privacy-policy', (req, res) => {
         message: 'Privacy policy not found'
       });
     }
-    
+
     // Read and send the HTML file
     const htmlContent = fs.readFileSync(privacyPolicyPath, 'utf8');
     res.setHeader('Content-Type', 'text/html');
@@ -91,7 +91,7 @@ router.get('/privacy-policy', (req, res) => {
 router.get('/terms-of-service', (req, res) => {
   try {
     const termsOfServicePath = path.join(__dirname, '..', '..', 'alasr', 'terms-of-service.html');
-    
+
     // Check if file exists
     if (!fs.existsSync(termsOfServicePath)) {
       return res.status(404).json({
@@ -99,7 +99,7 @@ router.get('/terms-of-service', (req, res) => {
         message: 'Terms of service not found'
       });
     }
-    
+
     // Read and send the HTML file
     const htmlContent = fs.readFileSync(termsOfServicePath, 'utf8');
     res.setHeader('Content-Type', 'text/html');
@@ -114,6 +114,7 @@ router.get('/terms-of-service', (req, res) => {
 });
 
 // Mount routes
+router.use('/', favoriteRoutes); // Favorites routes (includes /users/favorites and /config/app)
 router.use('/auth', authRoutes);
 router.use('/users', userRoutes);
 router.use('/masajids', masjidRoutes);
@@ -125,7 +126,6 @@ router.use('/events', eventRoutes);
 router.use('/subscriptions', subscriptionRoutes);
 router.use('/super-admin', superAdminRoutes);
 router.use('/device-settings', deviceSettingsRoutes);
-router.use('/', favoriteRoutes); // Favorites routes (includes /users/favorites and /config/app)
 
 module.exports = router;
 
