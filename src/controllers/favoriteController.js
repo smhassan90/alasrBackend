@@ -52,13 +52,25 @@ exports.getFavorites = async (req, res) => {
 
     const favorites = await UserFavorite.findAll({
       where: whereClause,
-      attributes: ['masjid_id'],
+      attributes: ['masjid_id', 'created_at'],
+      include: [
+        {
+          model: Masjid,
+          as: 'masjid',
+          attributes: ['id', 'name', 'address', 'location', 'city', 'state', 'country', 'postal_code', 'contact_email', 'contact_phone', 'is_active']
+        }
+      ],
       order: [['created_at', 'DESC']]
     });
 
-    const masjidIds = favorites.map(fav => fav.masjid_id);
+    // Transform the response to include masjid details
+    const favoriteMasajids = favorites.map(fav => ({
+      masjid_id: fav.masjid_id,
+      added_at: fav.created_at,
+      masjid: fav.masjid
+    }));
 
-    return responseHelper.success(res, masjidIds, 'Favorites retrieved successfully');
+    return responseHelper.success(res, favoriteMasajids, 'Favorites retrieved successfully');
   } catch (error) {
     logger.error(`Get favorites error: ${error.message}`);
     if (error.message.includes('required')) {
