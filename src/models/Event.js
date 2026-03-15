@@ -27,9 +27,22 @@ module.exports = (sequelize) => {
       type: DataTypes.TEXT,
       allowNull: true
     },
+    event_type: {
+      type: DataTypes.ENUM('one_time', 'recurring'),
+      defaultValue: 'one_time',
+      allowNull: false
+    },
+    day_of_week: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      validate: {
+        min: 0,
+        max: 6
+      }
+    },
     event_date: {
       type: DataTypes.DATEONLY,
-      allowNull: false
+      allowNull: true
     },
     event_time: {
       type: DataTypes.TIME,

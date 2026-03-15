@@ -14,8 +14,18 @@ exports.createEventValidator = [
     .optional()
     .trim(),
   
+  body('eventType')
+    .optional()
+    .isIn(['one_time', 'recurring']).withMessage('Event type must be either one_time or recurring'),
+    
+  body('dayOfWeek')
+    .if(body('eventType').equals('recurring'))
+    .notEmpty().withMessage('Day of week is required for recurring events')
+    .isInt({ min: 0, max: 6 }).withMessage('Day of week must be between 0 (Sunday) and 6 (Saturday)'),
+
   body('eventDate')
-    .notEmpty().withMessage('Event date is required.')
+    .if(body('eventType').not().equals('recurring'))
+    .notEmpty().withMessage('Event date is required for one_time events.')
     .isISO8601().withMessage('Invalid date format. Use YYYY-MM-DD')
     .toDate(),
   
@@ -42,6 +52,14 @@ exports.updateEventValidator = [
   body('description')
     .optional()
     .trim(),
+    
+  body('eventType')
+    .optional()
+    .isIn(['one_time', 'recurring']).withMessage('Event type must be either one_time or recurring'),
+    
+  body('dayOfWeek')
+    .optional()
+    .isInt({ min: 0, max: 6 }).withMessage('Day of week must be between 0 (Sunday) and 6 (Saturday)'),
   
   body('eventDate')
     .optional()

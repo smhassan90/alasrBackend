@@ -94,7 +94,7 @@ exports.getEventById = async (req, res) => {
  */
 exports.createEvent = async (req, res) => {
   try {
-    const { masjidId, name, description, eventDate, eventTime, location } = req.body;
+    const { masjidId, name, description, eventType, dayOfWeek, eventDate, eventTime, location } = req.body;
 
     const masjid = await Masjid.findByPk(masjidId);
     if (!masjid) {
@@ -105,7 +105,9 @@ exports.createEvent = async (req, res) => {
       masjid_id: masjidId,
       name,
       description,
-      event_date: eventDate,
+      event_type: eventType || 'one_time',
+      day_of_week: dayOfWeek !== undefined ? dayOfWeek : null,
+      event_date: eventType === 'recurring' ? null : eventDate,
       event_time: eventTime,
       location,
       created_by: req.userId
@@ -138,7 +140,7 @@ exports.createEvent = async (req, res) => {
 exports.updateEvent = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, eventDate, eventTime, location } = req.body;
+    const { name, description, eventType, dayOfWeek, eventDate, eventTime, location } = req.body;
 
     const event = await Event.findByPk(id);
     if (!event) {
@@ -152,7 +154,13 @@ exports.updateEvent = async (req, res) => {
 
     if (name) event.name = name;
     if (description !== undefined) event.description = description;
-    if (eventDate) event.event_date = eventDate;
+    if (eventType) event.event_type = eventType;
+    if (dayOfWeek !== undefined) event.day_of_week = dayOfWeek;
+    if (eventType === 'recurring') {
+      event.event_date = null;
+    } else if (eventDate) {
+      event.event_date = eventDate;
+    }
     if (eventTime) event.event_time = eventTime;
     if (location !== undefined) event.location = location;
 
@@ -222,9 +230,15 @@ exports.getUpcomingEvents = async (req, res) => {
       where: {
         masjid_id: masjidId,
         status: 'active',  // Only get active events (not deleted)
-        event_date: {
-          [Op.gte]: today
-        }
+        [Op.or]: [
+          { event_type: 'recurring' },
+          {
+            event_type: 'one_time',
+            event_date: {
+              [Op.gte]: today
+            }
+          }
+        ]
       },
       include: [
         {
@@ -259,6 +273,7 @@ exports.getPastEvents = async (req, res) => {
       where: {
         masjid_id: masjidId,
         status: 'active',  // Only get active events (not deleted)
+        event_type: 'one_time',
         event_date: {
           [Op.lt]: today
         }
