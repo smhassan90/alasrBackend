@@ -392,6 +392,107 @@ function applyScheduledMaghribToPrayerTimes(masjid, prayerTimes, date = null) {
   return list;
 }
 
+/**
+ * Build a scheduled Maghrib row shaped like a PrayerTime record.
+ * @param {Object} masjid
+ * @param {string} date - YYYY-MM-DD
+ * @param {Object} [base] - existing row to merge onto
+ * @returns {Object|null}
+ */
+function buildMaghribRow(masjid, date, base = null) {
+  const maghrib = getMaghribForCity(masjid.city, date);
+  if (!maghrib) return null;
+
+  const scheduleFields = {
+    prayer_time: maghrib.sunsetTime,
+    effective_date: date,
+    auto_scheduled: true,
+    schedule_city: maghrib.city,
+    schedule_effective_from: maghrib.scheduleFrom || maghrib.date
+  };
+
+  if (base) {
+    return { ...base, ...scheduleFields };
+  }
+
+  return {
+    id: null,
+    masjid_id: masjid.id,
+    prayer_name: 'Maghrib',
+    updated_by: masjid.created_by || null,
+    updater: null,
+    notify_users: false,
+    ...scheduleFields
+  };
+}
+
+/**
+ * Apply scheduled Maghrib across a list that may span multiple effective dates.
+ * Each existing Maghrib row is recalculated from its own effective_date, and
+ * missing days inside an explicit range are filled in.
+ *
+ * @param {Object} masjid
+ * @param {Array} prayerTimes
+ * @param {Object} [options]
+ * @param {string} [options.startDate] - YYYY-MM-DD
+ * @param {string} [options.endDate] - YYYY-MM-DD
+ * @param {number} [options.maxDays] - safety cap when filling a range
+ * @returns {Array}
+ */
+function applyScheduledMaghribByDate(masjid, prayerTimes, options = {}) {
+  if (!masjid?.city || !hasAutomatedMaghrib(masjid.city)) {
+    return prayerTimes;
+  }
+
+  const { maxDays = 400 } = options;
+  const startDate = toDateOnly(options.startDate);
+  const endDate = toDateOnly(options.endDate);
+
+  const list = prayerTimes.map(pt => (typeof pt.toJSON === 'function' ? pt.toJSON() : { ...pt }));
+
+  // Recalculate every existing Maghrib row from its own effective date
+  const covered = new Set();
+  for (let i = 0; i < list.length; i++) {
+    if (list[i].prayer_name !== 'Maghrib') continue;
+
+    const rowDate = toDateOnly(list[i].effective_date);
+    if (!rowDate) continue;
+
+    const updated = buildMaghribRow(masjid, rowDate, list[i]);
+    if (updated) {
+      list[i] = updated;
+      covered.add(rowDate);
+    }
+  }
+
+  // Fill days in an explicit range that have no Maghrib row yet
+  if (startDate && endDate && startDate <= endDate) {
+    const span = daysBetween(startDate, endDate);
+    if (span >= 0 && span <= maxDays) {
+      for (let offset = 0; offset <= span; offset++) {
+        const cursor = parseDateOnly(startDate);
+        cursor.setUTCDate(cursor.getUTCDate() + offset);
+        const date = cursor.toISOString().split('T')[0];
+
+        if (covered.has(date)) continue;
+
+        const row = buildMaghribRow(masjid, date);
+        if (row) {
+          list.push(row);
+          covered.add(date);
+        }
+      }
+    } else {
+      logger.warn(`Maghrib range fill skipped for masjid ${masjid.id}: span ${span} days exceeds cap ${maxDays}`);
+    }
+  }
+
+  // Preserve existing ordering contract: newest effective_date first
+  list.sort((a, b) => String(b.effective_date).localeCompare(String(a.effective_date)));
+
+  return list;
+}
+
 module.exports = {
   getDateInTimezone,
   getTodayForCity,
@@ -400,5 +501,6 @@ module.exports = {
   getMaghribForCity,
   syncMaghribForMasjid,
   syncMaghribForAllScheduledCities,
-  applyScheduledMaghribToPrayerTimes
+  applyScheduledMaghribToPrayerTimes,
+  applyScheduledMaghribByDate
 };

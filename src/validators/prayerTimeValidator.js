@@ -1,4 +1,4 @@
-const { body, param } = require('express-validator');
+const { body, param, query } = require('express-validator');
 
 exports.createPrayerTimeValidator = [
   body('masjidId')
@@ -71,6 +71,18 @@ exports.bulkUpdateValidator = [
 exports.masjidIdParamValidator = [
   param('masjidId')
     .notEmpty().withMessage('Masjid ID is required')
-    .isUUID().withMessage('Invalid masjid ID')
+    .isUUID().withMessage('Invalid masjid ID'),
+
+  query('effectiveDate')
+    .optional()
+    .matches(/^\d{4}-\d{2}-\d{2}$/).withMessage('effectiveDate must be YYYY-MM-DD'),
+
+  query('startDate')
+    .optional()
+    .matches(/^\d{4}-\d{2}-\d{2}$/).withMessage('startDate must be YYYY-MM-DD'),
+
+  query('endDate')
+    .optional()
+    .matches(/^\d{4}-\d{2}-\d{2}$/).withMessage('endDate must be YYYY-MM-DD')
 ];
 

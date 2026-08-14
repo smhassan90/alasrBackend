@@ -36,12 +36,25 @@ function shouldSendIndividualNotification(masjidId) {
 exports.getPrayerTimesByMasjid = async (req, res) => {
   try {
     const { masjidId } = req.params;
-    const { effectiveDate } = req.query;
+    const { effectiveDate, startDate, endDate } = req.query;
+
+    const masjid = await Masjid.findByPk(masjidId, {
+      attributes: ['id', 'name', 'city', 'created_by']
+    });
+    if (!masjid) {
+      return responseHelper.notFound(res, 'Masjid not found');
+    }
 
     const whereClause = { masjid_id: masjidId };
-    
+
     if (effectiveDate) {
       whereClause.effective_date = effectiveDate;
+    } else if (startDate && endDate) {
+      whereClause.effective_date = { [Op.between]: [startDate, endDate] };
+    } else if (startDate) {
+      whereClause.effective_date = { [Op.gte]: startDate };
+    } else if (endDate) {
+      whereClause.effective_date = { [Op.lte]: endDate };
     }
 
     const prayerTimes = await PrayerTime.findAll({
@@ -59,9 +72,19 @@ exports.getPrayerTimesByMasjid = async (req, res) => {
       ]
     });
 
-    return responseHelper.success(res, prayerTimes, 'Prayer times retrieved successfully');
+    let result = prayerTimes;
+
+    // Maghrib comes from the city sunset schedule, recalculated per effective date
+    if (maghribScheduleService.hasAutomatedMaghrib(masjid.city)) {
+      result = maghribScheduleService.applyScheduledMaghribByDate(masjid, prayerTimes, {
+        startDate: startDate || effectiveDate || null,
+        endDate: endDate || effectiveDate || null
+      });
+    }
+
+    return responseHelper.success(res, result, 'Prayer times retrieved successfully');
   } catch (error) {
-    logger.error(`Get prayer times error: ${error.message}`, { error: error.stack, masjidId });
+    logger.error(`Get prayer times error: ${error.message}`, { error: error.stack, masjidId: req.params?.masjidId });
     return responseHelper.error(res, `Failed to retrieve prayer times: ${error.message}`, 500);
   }
 };
