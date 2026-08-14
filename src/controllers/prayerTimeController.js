@@ -5,6 +5,33 @@ const pushNotificationService = require('../utils/pushNotificationService');
 const maghribScheduleService = require('../services/maghribScheduleService');
 const { Op } = require('sequelize');
 
+const PRAYER_ORDER = "FIELD(prayer_name, 'Fajr', 'Dhuhr', 'Jummah', 'Asr', 'Maghrib', 'Isha')";
+const PUBLIC_RANGE_DAYS = 62;
+const PUBLIC_ROW_CAP = 400;
+const IMAM_ROW_CAP = 2000;
+
+async function findLatestPrayerTimes(masjidId, today) {
+  return sequelize.query(
+    `SELECT pt.*
+     FROM prayer_times AS pt
+     INNER JOIN (
+       SELECT prayer_name, MAX(effective_date) AS max_date
+       FROM prayer_times
+       WHERE masjid_id = :masjidId AND effective_date <= :today
+       GROUP BY prayer_name
+     ) AS latest
+       ON latest.prayer_name = pt.prayer_name
+      AND latest.max_date = pt.effective_date
+     WHERE pt.masjid_id = :masjidId
+     ORDER BY FIELD(pt.prayer_name, 'Fajr', 'Dhuhr', 'Jummah', 'Asr', 'Maghrib', 'Isha')`,
+    {
+      replacements: { masjidId, today },
+      model: PrayerTime,
+      mapToModel: true
+    }
+  );
+}
+
 // Debounce mechanism to prevent duplicate notifications
 // Tracks the last notification time for each masjid (for individual updates only)
 const notificationDebounceMap = new Map();
@@ -37,6 +64,7 @@ exports.getPrayerTimesByMasjid = async (req, res) => {
   try {
     const { masjidId } = req.params;
     const { effectiveDate, startDate, endDate } = req.query;
+    const isPublicRead = !!(req.isApiKeyAuth || req.apiKeyAuth);
 
     const masjid = await Masjid.findByPk(masjidId, {
       attributes: ['id', 'name', 'city', 'created_by']
@@ -46,6 +74,7 @@ exports.getPrayerTimesByMasjid = async (req, res) => {
     }
 
     const whereClause = { masjid_id: masjidId };
+    const rowCap = isPublicRead ? PUBLIC_ROW_CAP : IMAM_ROW_CAP;
 
     if (effectiveDate) {
       whereClause.effective_date = effectiveDate;
@@ -68,8 +97,9 @@ exports.getPrayerTimesByMasjid = async (req, res) => {
       ],
       order: [
         ['effective_date', 'DESC'],
-        [sequelize.literal("FIELD(prayer_name, 'Fajr', 'Dhuhr', 'Jummah', 'Asr', 'Maghrib', 'Isha')")]
-      ]
+        [sequelize.literal(PRAYER_ORDER)]
+      ],
+      limit: rowCap
     });
 
     let result = prayerTimes;
@@ -78,7 +108,8 @@ exports.getPrayerTimesByMasjid = async (req, res) => {
     if (maghribScheduleService.hasAutomatedMaghrib(masjid.city)) {
       result = maghribScheduleService.applyScheduledMaghribByDate(masjid, prayerTimes, {
         startDate: startDate || effectiveDate || null,
-        endDate: endDate || effectiveDate || null
+        endDate: endDate || effectiveDate || null,
+        maxDays: isPublicRead ? PUBLIC_RANGE_DAYS : 400
       });
     }
 
@@ -108,43 +139,18 @@ exports.getTodaysPrayerTimes = async (req, res) => {
       ? maghribScheduleService.getTodayForCity(masjid.city)
       : new Date().toISOString().split('T')[0];
 
-    const prayerTimes = await PrayerTime.findAll({
-      where: {
-        masjid_id: masjidId,
-        effective_date: {
-          [Op.lte]: today
-        }
-      },
-      order: [
-        ['effective_date', 'DESC'],
-        [sequelize.literal("FIELD(prayer_name, 'Fajr', 'Dhuhr', 'Jummah', 'Asr', 'Maghrib', 'Isha')")]
-      ]
-    });
+    const latestPrayerTimes = await findLatestPrayerTimes(masjidId, today);
+    let result = latestPrayerTimes;
 
-    // Get the most recent prayer time for each prayer
-    const latestPrayerTimes = {};
-    prayerTimes.forEach(pt => {
-      if (!latestPrayerTimes[pt.prayer_name]) {
-        latestPrayerTimes[pt.prayer_name] = pt;
-      }
-    });
-
-    let result = Object.values(latestPrayerTimes);
-
-    // Maghrib is driven by city sunset schedule when available
+    // Overlay interpolated Maghrib in memory. Persist via cron / Imam writes, not public GET.
     if (maghribScheduleService.hasAutomatedMaghrib(masjid.city)) {
-      // Await sync so Vercel serverless does not freeze before DB write finishes
-      try {
-        await maghribScheduleService.syncMaghribForMasjid(masjid, today);
-      } catch (err) {
-        logger.error(`Maghrib sync failed for masjid ${masjidId}: ${err.message}`);
-      }
       result = maghribScheduleService.applyScheduledMaghribToPrayerTimes(masjid, result, today);
     }
 
+    res.set('Cache-Control', 'public, max-age=60');
     return responseHelper.success(res, result, 'Today\'s prayer times retrieved successfully');
   } catch (error) {
-    logger.error(`Get today's prayer times error: ${error.message}`, { error: error.stack, masjidId });
+    logger.error(`Get today's prayer times error: ${error.message}`, { error: error.stack, masjidId: req.params?.masjidId });
     return responseHelper.error(res, `Failed to retrieve prayer times: ${error.message}`, 500);
   }
 };
@@ -330,7 +336,7 @@ exports.bulkUpdatePrayerTimes = async (req, res) => {
   try {
     const { masjidId, prayerTimes, effectiveDate, notifyUsers } = req.body;
 
-    const masjid = await Masjid.findByPk(masjidId);
+    const masjid = await Masjid.findByPk(masjidId, { transaction });
     if (!masjid) {
       await transaction.rollback();
       return responseHelper.notFound(res, 'Masjid not found');
@@ -339,52 +345,52 @@ exports.bulkUpdatePrayerTimes = async (req, res) => {
     const date = effectiveDate || new Date().toISOString().split('T')[0];
     const maghribAutomated = maghribScheduleService.hasAutomatedMaghrib(masjid.city);
 
-    const createdPrayerTimes = [];
+    const incoming = (prayerTimes || []).filter(
+      pt => !(pt.prayerName === 'Maghrib' && maghribAutomated)
+    );
+
+    const existingRows = await PrayerTime.findAll({
+      where: {
+        masjid_id: masjidId,
+        effective_date: date
+      },
+      transaction
+    });
+    const existingByName = new Map(existingRows.map(row => [row.prayer_name, row]));
+
     let hasChanges = false;
-
-    for (const pt of prayerTimes) {
-      // Skip manual Maghrib when city has an automated sunset schedule
-      if (pt.prayerName === 'Maghrib' && maghribAutomated) {
-        continue;
+    const upsertRows = incoming.map(pt => {
+      const existing = existingByName.get(pt.prayerName);
+      if (!existing || existing.prayer_time !== pt.prayerTime) {
+        hasChanges = true;
       }
+      return {
+        masjid_id: masjidId,
+        prayer_name: pt.prayerName,
+        prayer_time: pt.prayerTime,
+        effective_date: date,
+        updated_by: req.userId,
+        notify_users: notifyUsers !== undefined ? notifyUsers : (existing?.notify_users || false)
+      };
+    });
 
-      // Check if exists
-      const existing = await PrayerTime.findOne({
-        where: {
-          masjid_id: masjidId,
-          prayer_name: pt.prayerName,
-          effective_date: date
-        },
+    if (upsertRows.length > 0) {
+      await PrayerTime.bulkCreate(upsertRows, {
+        updateOnDuplicate: ['prayer_time', 'updated_by', 'notify_users', 'updated_at'],
         transaction
       });
-
-      if (existing) {
-        // Check if prayer time actually changed
-        if (existing.prayer_time !== pt.prayerTime) {
-          hasChanges = true;
-        }
-        // Update
-        existing.prayer_time = pt.prayerTime;
-        existing.updated_by = req.userId;
-        if (notifyUsers !== undefined) {
-          existing.notify_users = notifyUsers;
-        }
-        await existing.save({ transaction });
-        createdPrayerTimes.push(existing);
-      } else {
-        // Create new - always notify for new prayer times
-        hasChanges = true;
-        const newPrayerTime = await PrayerTime.create({
-          masjid_id: masjidId,
-          prayer_name: pt.prayerName,
-          prayer_time: pt.prayerTime,
-          effective_date: date,
-          updated_by: req.userId,
-          notify_users: notifyUsers || false
-        }, { transaction });
-        createdPrayerTimes.push(newPrayerTime);
-      }
     }
+
+    const createdPrayerTimes = incoming.length
+      ? await PrayerTime.findAll({
+          where: {
+            masjid_id: masjidId,
+            effective_date: date,
+            prayer_name: { [Op.in]: incoming.map(pt => pt.prayerName) }
+          },
+          transaction
+        })
+      : [];
 
     await transaction.commit();
 
@@ -406,16 +412,16 @@ exports.bulkUpdatePrayerTimes = async (req, res) => {
     // The sendPrayerTimeBulkNotifications function already filters by user preferences
     // Exclude the user who made the change (imam/admin) from receiving notifications
     if (hasChanges) {
-      // Get masjid info for notification
-      const masjidInfo = await Masjid.findByPk(masjidId);
-      sendPrayerTimeBulkNotifications(masjidInfo, createdPrayerTimes, req.userId).catch(err => {
+      sendPrayerTimeBulkNotifications(masjid, createdPrayerTimes, req.userId).catch(err => {
         logger.error(`Failed to send bulk prayer time notifications: ${err.message}`);
       });
     }
 
     return responseHelper.success(res, createdPrayerTimes, 'Prayer times updated successfully');
   } catch (error) {
-    await transaction.rollback();
+    if (transaction && !transaction.finished) {
+      await transaction.rollback();
+    }
     logger.error(`Bulk update prayer times error: ${error.message}`);
     return responseHelper.error(res, 'Failed to update prayer times', 500);
   }
@@ -446,16 +452,19 @@ async function sendPrayerTimeNotifications(masjid, prayerTime, excludeUserId = n
         is_active: true,
         fcm_token: { [Op.ne]: null }
       },
+      attributes: ['id', 'masjid_id', 'user_id', 'device_id', 'fcm_token'],
       include: [
         {
           model: User,
           as: 'user',
           required: false,
+          attributes: ['id'],
           include: [
             {
               model: UserSettings,
               as: 'settings',
-              required: false
+              required: false,
+              attributes: ['prayer_times_notifications']
             }
           ]
         }
@@ -658,16 +667,19 @@ async function sendPrayerTimeBulkNotifications(masjid, prayerTimes, excludeUserI
         is_active: true,
         fcm_token: { [Op.ne]: null }
       },
+      attributes: ['id', 'masjid_id', 'user_id', 'device_id', 'fcm_token'],
       include: [
         {
           model: User,
           as: 'user',
           required: false,
+          attributes: ['id'],
           include: [
             {
               model: UserSettings,
               as: 'settings',
-              required: false
+              required: false,
+              attributes: ['prayer_times_notifications']
             }
           ]
         }

@@ -51,7 +51,7 @@ module.exports = {
     // Don't connect on initialization - lazy connect for serverless
     // Set pool to avoid immediate connection
     pool: {
-      max: 10,           // Reduced for serverless (Vercel)
+      max: parseInt(process.env.DB_POOL_MAX || '2', 10), // Keep low so Vercel isolates do not exhaust MySQL
       min: 0,            // Don't keep connections (serverless)
       acquire: 30000,    // 30 second timeout
       idle: 10000,       // Close idle connections quickly

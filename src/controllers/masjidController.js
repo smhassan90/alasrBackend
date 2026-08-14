@@ -11,7 +11,8 @@ const { Op } = require('sequelize');
  */
 exports.getAllMasajids = async (req, res) => {
   try {
-    const { page = 1, limit = 10, search } = req.query;
+    const { page = 1, search } = req.query;
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 100);
     const offset = (page - 1) * limit;
 
     // Build where clause
@@ -26,8 +27,7 @@ exports.getAllMasajids = async (req, res) => {
     }
     // If user is authenticated via JWT token, apply filtering based on role
     else if (req.userId) {
-      const user = await User.findByPk(req.userId);
-      const isSuperAdmin = user && user.is_super_admin;
+      const isSuperAdmin = !!(req.user && req.user.is_super_admin);
 
       // If NOT super admin, filter by user's masajids
       if (!isSuperAdmin) {
@@ -42,7 +42,7 @@ exports.getAllMasajids = async (req, res) => {
         if (masjidIds.length === 0) {
           return responseHelper.paginated(res, [], {
             page: parseInt(page),
-            limit: parseInt(limit),
+            limit,
             totalItems: 0
           }, 'No masajids found');
         }
@@ -61,44 +61,44 @@ exports.getAllMasajids = async (req, res) => {
       ];
     }
 
-    const { count, rows: masajids } = await Masjid.findAndCountAll({
-      where: whereClause,
-      limit: parseInt(limit),
-      offset: parseInt(offset),
-      order: [['created_at', 'DESC']],
-      include: [
-        {
-          model: User,
-          as: 'creator',
-          attributes: ['id', 'name', 'email']
-        }
-      ]
-    });
-
-    // Get user's active subscriptions (authenticated or anonymous via deviceId)
-    let userSubscriptions = [];
     const { deviceId } = req.query;
-    
+    let subscriptionWhere = null;
     if (req.userId) {
-      // Authenticated user: get subscriptions by userId
-      userSubscriptions = await MasjidSubscription.findAll({
-        where: {
-          user_id: req.userId,
-          is_active: true
-        },
-        attributes: ['masjid_id']
-      });
+      subscriptionWhere = {
+        user_id: req.userId,
+        is_active: true
+      };
     } else if (deviceId) {
-      // Anonymous user: get subscriptions by deviceId
-      userSubscriptions = await MasjidSubscription.findAll({
-        where: {
-          device_id: deviceId,
-          user_id: { [Op.is]: null },
-          is_active: true
-        },
-        attributes: ['masjid_id']
-      });
+      subscriptionWhere = {
+        device_id: deviceId,
+        user_id: { [Op.is]: null },
+        is_active: true
+      };
     }
+
+    const [listResult, userSubscriptions] = await Promise.all([
+      Masjid.findAndCountAll({
+        where: whereClause,
+        limit,
+        offset: parseInt(offset, 10) || 0,
+        order: [['created_at', 'DESC']],
+        include: [
+          {
+            model: User,
+            as: 'creator',
+            attributes: ['id', 'name', 'email']
+          }
+        ]
+      }),
+      subscriptionWhere
+        ? MasjidSubscription.findAll({
+            where: subscriptionWhere,
+            attributes: ['masjid_id']
+          })
+        : Promise.resolve([])
+    ]);
+
+    const { count, rows: masajids } = listResult;
 
     // Add subscription status to each masjid
     const masajidsWithSubscription = masajids.map(masjid => {
@@ -122,7 +122,7 @@ exports.getAllMasajids = async (req, res) => {
 
     return responseHelper.paginated(res, masajidsWithSubscription, {
       page: parseInt(page),
-      limit: parseInt(limit),
+      limit,
       totalItems: count
     }, 'Masajids retrieved successfully');
   } catch (error) {
@@ -315,6 +315,7 @@ exports.setDefaultMasjid = async (req, res) => {
     });
 
     if (!userMasjid) {
+      await transaction.rollback();
       return responseHelper.forbidden(res, 'You are not a member of this masjid');
     }
 

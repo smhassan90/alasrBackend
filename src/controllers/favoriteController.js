@@ -1,8 +1,9 @@
-const { UserFavorite, Masjid, AppConfig } = require('../models');
+const { UserFavorite, Masjid } = require('../models');
 const responseHelper = require('../utils/responseHelper');
 const logger = require('../utils/logger');
 const { Op } = require('sequelize');
 const { generateDeviceId } = require('../utils/deviceId');
+const { getMaxFavoritesLimit } = require('../utils/appConfigCache');
 
 /**
  * Get app configuration (public endpoint)
@@ -10,12 +11,9 @@ const { generateDeviceId } = require('../utils/deviceId');
  */
 exports.getAppConfig = async (req, res) => {
   try {
-    const config = await AppConfig.findOne({
-      where: { key: 'max_favorites_limit' }
-    });
+    const maxFavoritesLimit = await getMaxFavoritesLimit();
 
-    const maxFavoritesLimit = config ? parseInt(config.value, 10) : 5;
-
+    res.set('Cache-Control', 'public, max-age=300');
     return responseHelper.success(res, {
       maxFavoritesLimit
     }, 'App configuration retrieved successfully');
@@ -96,18 +94,6 @@ exports.addFavorite = async (req, res) => {
       return responseHelper.error(res, 'masjidId is required', 400);
     }
 
-    // Validate masjid exists
-    const masjid = await Masjid.findByPk(masjidId);
-    if (!masjid) {
-      return responseHelper.notFound(res, 'Masjid not found');
-    }
-
-    // Get max favorites limit from config
-    const config = await AppConfig.findOne({
-      where: { key: 'max_favorites_limit' }
-    });
-    const maxFavoritesLimit = config ? parseInt(config.value, 10) : 5;
-
     // Determine user identifier
     let whereClause = {};
     let favoriteUserId = null;
@@ -128,22 +114,25 @@ exports.addFavorite = async (req, res) => {
       return responseHelper.error(res, 'Authentication required or deviceId and platform must be provided', 400);
     }
 
-    // Check if already favorited
-    const existingFavorite = await UserFavorite.findOne({
-      where: {
-        ...whereClause,
-        masjid_id: masjidId
-      }
-    });
+    const [masjid, maxFavoritesLimit, existingFavorite, favoritesCount] = await Promise.all([
+      Masjid.findByPk(masjidId, { attributes: ['id'] }),
+      getMaxFavoritesLimit(),
+      UserFavorite.findOne({
+        where: {
+          ...whereClause,
+          masjid_id: masjidId
+        }
+      }),
+      UserFavorite.count({ where: whereClause })
+    ]);
+
+    if (!masjid) {
+      return responseHelper.notFound(res, 'Masjid not found');
+    }
 
     if (existingFavorite) {
       return responseHelper.error(res, 'Masjid is already in favorites', 409);
     }
-
-    // Check if user has reached the limit
-    const favoritesCount = await UserFavorite.count({
-      where: whereClause
-    });
 
     if (favoritesCount >= maxFavoritesLimit) {
       return responseHelper.error(res, `Maximum favorites limit (${maxFavoritesLimit}) reached`, 400);

@@ -40,6 +40,16 @@ module.exports = (sequelize) => {
       },
       {
         fields: ['masjid_id']
+      },
+      {
+        unique: true,
+        fields: ['user_id', 'masjid_id'],
+        name: 'uniq_user_favorites_user_masjid'
+      },
+      {
+        unique: true,
+        fields: ['device_id', 'masjid_id'],
+        name: 'uniq_user_favorites_device_masjid'
       }
     ]
   });

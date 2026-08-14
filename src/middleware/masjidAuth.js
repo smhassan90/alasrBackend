@@ -29,7 +29,7 @@ exports.isMasjidMember = async (req, res, next) => {
       return responseHelper.unauthorized(res, 'Authentication required');
     }
 
-    const isMember = await permissionChecker.isMasjidMember(userId, masjidId);
+    const isMember = await permissionChecker.isMasjidMember(userId, masjidId, req.user);
 
     if (!isMember) {
       return responseHelper.forbidden(res, 'You are not a member of this masjid');
@@ -58,7 +58,7 @@ exports.isMasjidImam = async (req, res, next) => {
       return responseHelper.error(res, 'Masjid ID is required', 400);
     }
 
-    const isImam = await permissionChecker.isMasjidImam(userId, masjidId);
+    const isImam = await permissionChecker.isMasjidImam(userId, masjidId, req.user);
 
     if (!isImam) {
       return responseHelper.forbidden(res, 'You must be an imam of this masjid to perform this action');
@@ -87,7 +87,7 @@ exports.isMasjidAdmin = async (req, res, next) => {
       return responseHelper.error(res, 'Masjid ID is required', 400);
     }
 
-    const isAdmin = await permissionChecker.isMasjidAdmin(userId, masjidId);
+    const isAdmin = await permissionChecker.isMasjidAdmin(userId, masjidId, req.user);
 
     if (!isAdmin) {
       return responseHelper.forbidden(res, 'You must be an admin of this masjid to perform this action');
@@ -116,7 +116,7 @@ exports.isMasjidImamOrAdmin = async (req, res, next) => {
       return responseHelper.error(res, 'Masjid ID is required', 400);
     }
 
-    const hasPermission = await permissionChecker.isMasjidImamOrAdmin(userId, masjidId);
+    const hasPermission = await permissionChecker.isMasjidImamOrAdmin(userId, masjidId, req.user);
 
     if (!hasPermission) {
       return responseHelper.forbidden(res, 'You must be an imam or admin of this masjid to perform this action');
@@ -145,7 +145,7 @@ exports.canManagePrayerTimes = async (req, res, next) => {
       return responseHelper.error(res, 'Masjid ID is required', 400);
     }
 
-    const canManage = await permissionChecker.canManagePrayerTimes(userId, masjidId);
+    const canManage = await permissionChecker.canManagePrayerTimes(userId, masjidId, req.user);
 
     if (!canManage) {
       return responseHelper.forbidden(res, 'You do not have permission to manage prayer times for this masjid');
@@ -174,7 +174,7 @@ exports.canManageMasjid = async (req, res, next) => {
       return responseHelper.error(res, 'Masjid ID is required', 400);
     }
 
-    const canManage = await permissionChecker.canManageMasjid(userId, masjidId);
+    const canManage = await permissionChecker.canManageMasjid(userId, masjidId, req.user);
 
     if (!canManage) {
       return responseHelper.forbidden(res, 'You must be an admin to manage this masjid');
@@ -203,7 +203,7 @@ exports.canManageUsers = async (req, res, next) => {
       return responseHelper.error(res, 'Masjid ID is required', 400);
     }
 
-    const canManage = await permissionChecker.canManageUsers(userId, masjidId);
+    const canManage = await permissionChecker.canManageUsers(userId, masjidId, req.user);
 
     if (!canManage) {
       return responseHelper.forbidden(res, 'You must be an admin to manage users for this masjid');
@@ -327,7 +327,7 @@ exports.canCreateEvents = async (req, res, next) => {
       return responseHelper.error(res, 'Masjid ID is required', 400);
     }
 
-    const canCreate = await permissionChecker.canCreateEvents(userId, masjidId);
+    const canCreate = await permissionChecker.canCreateEvents(userId, masjidId, req.user);
 
     if (!canCreate) {
       return responseHelper.forbidden(res, 'You do not have permission to create events for this masjid');
@@ -353,7 +353,7 @@ exports.canCreateNotifications = async (req, res, next) => {
       return responseHelper.error(res, 'Masjid ID is required', 400);
     }
 
-    const canCreate = await permissionChecker.canCreateNotifications(userId, masjidId);
+    const canCreate = await permissionChecker.canCreateNotifications(userId, masjidId, req.user);
 
     if (!canCreate) {
       return responseHelper.forbidden(res, 'You do not have permission to create notifications for this masjid');
@@ -394,7 +394,7 @@ exports.canDeleteEvent = async (req, res, next) => {
     const masjidId = event.masjid_id;
 
     // Check if user is imam or admin for the masjid
-    const isImamOrAdmin = await permissionChecker.isMasjidImamOrAdmin(userId, masjidId);
+    const isImamOrAdmin = await permissionChecker.isMasjidImamOrAdmin(userId, masjidId, req.user);
     
     if (isImamOrAdmin) {
       req.masjidId = masjidId;
@@ -404,7 +404,7 @@ exports.canDeleteEvent = async (req, res, next) => {
 
     // Check if user created the event and has can_create_events permission
     if (event.created_by === userId) {
-      const canCreateEvents = await permissionChecker.canCreateEvents(userId, masjidId);
+      const canCreateEvents = await permissionChecker.canCreateEvents(userId, masjidId, req.user);
       if (canCreateEvents) {
         req.masjidId = masjidId;
         req.event = event;

@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
+const compression = require('compression');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
@@ -8,16 +9,17 @@ const fs = require('fs');
 
 const routes = require('./routes');
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
-const logger = require('./utils/logger');
 
 // Create Express app
 const app = express();
+const apiVersion = process.env.API_VERSION || 'v1';
 
 // Trust proxy (for rate limiting behind reverse proxy)
 app.set('trust proxy', 1);
 
 // Security middleware
 app.use(helmet());
+app.use(compression());
 
 // CORS configuration
 const corsOptions = {
@@ -35,35 +37,44 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // Check if we're in a serverless environment (Vercel, AWS Lambda, etc.)
 const isServerless = process.env.VERCEL === '1' || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.SERVERLESS;
 
-if (process.env.NODE_ENV === 'development' || isServerless) {
-  // In development or serverless, log to console
+if (process.env.NODE_ENV === 'development' && !isServerless) {
   app.use(morgan('dev'));
 } else {
-  // In production (non-serverless), log to file
-  try {
-    // Create logs directory if it doesn't exist
-    const logsDir = path.join(__dirname, '..', 'logs');
-    if (!fs.existsSync(logsDir)) {
-      fs.mkdirSync(logsDir, { recursive: true });
+  // Production / Vercel: only log errors and slow requests
+  app.use(morgan((tokens, req, res) => {
+    const ms = Number(tokens['response-time'](req, res) || 0);
+    const status = Number(tokens.status(req, res) || 0);
+    if (status < 400 && ms < 300) {
+      return null;
     }
-
-    // Log to file in production
-    const accessLogStream = fs.createWriteStream(
-      path.join(logsDir, 'access.log'),
-      { flags: 'a' }
-    );
-    app.use(morgan('combined', { stream: accessLogStream }));
-  } catch (error) {
-    // Fallback to console logging if file logging fails
-    console.warn('Could not set up file logging, using console:', error.message);
-    app.use(morgan('combined'));
-  }
+    return `${tokens.method(req)} ${tokens.url(req)} ${status} ${ms}ms`;
+  }));
 }
+
+const validPublicApiKey = () => process.env.PUBLIC_API_KEY || process.env.API_KEY;
+
+const isPublicApiKeyGet = (req) => {
+  if (req.method !== 'GET') return false;
+  const apiKey = req.headers['x-api-key'] || req.headers['X-API-Key'];
+  const expected = validPublicApiKey();
+  return !!(apiKey && expected && apiKey === expected);
+};
+
+const isHotPublicGet = (req) => {
+  if (req.method !== 'GET') return false;
+  const p = req.path || '';
+  return (
+    p.endsWith('/today') ||
+    p.includes('/config/app') ||
+    p.endsWith('/users/favorites') ||
+    /\/masajids\/?$/.test(p)
+  );
+};
 
 // Rate limiting
 const limiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes
-  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100,
+  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 1000,
   message: {
     success: false,
     message: 'Too many requests from this IP, please try again later.'
@@ -72,7 +83,12 @@ const limiter = rateLimit({
   legacyHeaders: false,
   // Skip rate limiting if request has skipRateLimit flag (set by super admin bypass)
   // Also skip for cron jobs (Vercel Cron / manual secret-authenticated sync)
-  skip: (req) => req.skipRateLimit === true || req.path.includes('/cron/')
+  // Public API-key GETs and home-screen reads should not share the NAT 429 bucket
+  skip: (req) =>
+    req.skipRateLimit === true ||
+    req.path.includes('/cron/') ||
+    isPublicApiKeyGet(req) ||
+    isHotPublicGet(req)
 });
 
 // Super admin bypass middleware (checks before rate limiting)
@@ -93,6 +109,10 @@ const authLimiter = rateLimit({
   skipSuccessfulRequests: true
 });
 
+app.use(`/api/${apiVersion}/auth/login`, authLimiter);
+app.use(`/api/${apiVersion}/auth/register`, authLimiter);
+app.use(`/api/${apiVersion}/auth/forgot-password`, authLimiter);
+// Keep legacy mounts in case anything still hits the unversioned paths
 app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/register', authLimiter);
 app.use('/api/auth/forgot-password', authLimiter);
@@ -101,7 +121,7 @@ app.use('/api/auth/forgot-password', authLimiter);
 app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 
 // API routes
-app.use(`/api/${process.env.API_VERSION || 'v1'}`, routes);
+app.use(`/api/${apiVersion}`, routes);
 
 // Privacy Policy route (direct access)
 app.get('/alasr/privacy-policy', (req, res) => {

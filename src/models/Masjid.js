@@ -64,7 +64,17 @@ module.exports = (sequelize) => {
     }
   }, {
     tableName: 'masajids',
-    timestamps: true
+    timestamps: true,
+    indexes: [
+      {
+        fields: ['is_active', 'created_at'],
+        name: 'idx_masajids_active_created'
+      },
+      {
+        fields: ['city'],
+        name: 'idx_masajids_city'
+      }
+    ]
   });
 
   Masjid.associate = (models) => {

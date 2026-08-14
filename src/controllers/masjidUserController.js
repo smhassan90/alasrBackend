@@ -18,12 +18,14 @@ exports.addUserToMasjid = async (req, res) => {
     // Check if user exists
     const user = await User.findByPk(userId);
     if (!user) {
+      await transaction.rollback();
       return responseHelper.notFound(res, 'User not found');
     }
 
     // Check if masjid exists
     const masjid = await Masjid.findByPk(masjidId);
     if (!masjid) {
+      await transaction.rollback();
       return responseHelper.notFound(res, 'Masjid not found');
     }
 
@@ -37,11 +39,13 @@ exports.addUserToMasjid = async (req, res) => {
     });
 
     if (existingAssociation) {
+      await transaction.rollback();
       return responseHelper.error(res, `User is already ${role} of this masjid`, 400);
     }
 
     // Prevent user from adding themselves
     if (userId === req.userId) {
+      await transaction.rollback();
       return responseHelper.forbidden(res, 'You cannot add yourself to a masjid');
     }
 
@@ -150,6 +154,7 @@ exports.updateUserRole = async (req, res) => {
 
     // Prevent user from modifying their own role
     if (userId === req.userId) {
+      await transaction.rollback();
       return responseHelper.forbidden(res, 'You cannot modify your own role');
     }
 
@@ -162,6 +167,7 @@ exports.updateUserRole = async (req, res) => {
     });
 
     if (!userMasjid) {
+      await transaction.rollback();
       return responseHelper.notFound(res, 'User is not a member of this masjid');
     }
 
@@ -169,6 +175,7 @@ exports.updateUserRole = async (req, res) => {
     if (userMasjid.role === 'admin' && role === 'imam') {
       const isLastAdmin = await permissionChecker.isLastAdmin(userId, masjidId);
       if (isLastAdmin) {
+        await transaction.rollback();
         return responseHelper.forbidden(res, 'Cannot change role of the last admin');
       }
     }
@@ -183,6 +190,7 @@ exports.updateUserRole = async (req, res) => {
     });
 
     if (existingNewRole) {
+      await transaction.rollback();
       return responseHelper.error(res, `User already has ${role} role for this masjid`, 400);
     }
 
@@ -294,12 +302,14 @@ exports.transferOwnership = async (req, res) => {
     // Check if new admin exists
     const newAdmin = await User.findByPk(newAdminId);
     if (!newAdmin) {
+      await transaction.rollback();
       return responseHelper.notFound(res, 'New admin user not found');
     }
 
     // Check if new admin is already admin of this masjid
     const isAdmin = await permissionChecker.isMasjidAdmin(newAdminId, masjidId);
     if (!isAdmin) {
+      await transaction.rollback();
       return responseHelper.error(res, 'New admin must already be an admin of this masjid', 400);
     }
 

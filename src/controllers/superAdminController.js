@@ -2,6 +2,7 @@ const { User, Masjid, UserMasjid, MasjidSubscription, sequelize, AppConfig } = r
 const responseHelper = require('../utils/responseHelper');
 const logger = require('../utils/logger');
 const { Op } = require('sequelize');
+const { invalidateAppConfigCache } = require('../utils/appConfigCache');
 
 /**
  * Get all users (Super Admin only)
@@ -271,6 +272,7 @@ exports.createUser = async (req, res) => {
     // Check if email already exists
     const existingUser = await User.findOne({ where: { email } });
     if (existingUser) {
+      await transaction.rollback();
       return responseHelper.error(res, 'Email already registered', 400);
     }
 
@@ -515,11 +517,13 @@ exports.deleteUser = async (req, res) => {
 
     // Cannot delete yourself
     if (id === req.userId) {
+      await transaction.rollback();
       return responseHelper.error(res, 'You cannot delete your own account', 400);
     }
 
     const user = await User.findByPk(id);
     if (!user) {
+      await transaction.rollback();
       return responseHelper.notFound(res, 'User not found');
     }
 
@@ -527,6 +531,7 @@ exports.deleteUser = async (req, res) => {
     if (user.is_super_admin) {
       const superAdminCount = await User.count({ where: { is_super_admin: true } });
       if (superAdminCount === 1) {
+        await transaction.rollback();
         return responseHelper.error(res, 'Cannot delete the last super admin', 400);
       }
     }
@@ -1071,6 +1076,8 @@ exports.updateAppConfig = async (req, res) => {
     }
 
     logger.info(`App config updated by super admin ${req.userId}: maxFavoritesLimit = ${maxFavoritesLimit}`);
+
+    invalidateAppConfigCache();
 
     return responseHelper.success(res, {
       maxFavoritesLimit: parseInt(config.value, 10)

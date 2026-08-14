@@ -56,6 +56,10 @@ module.exports = (sequelize) => {
       },
       {
         fields: ['masjid_id']
+      },
+      {
+        fields: ['masjid_id', 'effective_date'],
+        name: 'idx_prayer_times_masjid_date'
       }
     ]
   });

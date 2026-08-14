@@ -89,6 +89,10 @@ module.exports = (sequelize) => {
       },
       {
         fields: ['device_id']
+      },
+      {
+        fields: ['masjid_id', 'status', 'created_at'],
+        name: 'idx_questions_masjid_status_created'
       }
     ]
   });

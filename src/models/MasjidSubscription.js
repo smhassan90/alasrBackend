@@ -55,6 +55,10 @@ module.exports = (sequelize) => {
       {
         fields: ['fcm_token']
       },
+      {
+        fields: ['masjid_id', 'is_active'],
+        name: 'idx_masjid_subscriptions_masjid_active'
+      },
       // Note: Unique constraints are enforced at application level
       // MySQL doesn't support partial unique indexes with WHERE clauses
     ]

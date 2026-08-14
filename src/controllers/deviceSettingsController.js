@@ -19,11 +19,9 @@ exports.getDeviceSettings = async (req, res) => {
       where: { device_id: deviceId }
     });
 
-    // Create default settings if not exists
+    // Return defaults without a write; persist on PUT only
     if (!settings) {
-      settings = await DeviceSettings.create({
-        device_id: deviceId
-      });
+      settings = DeviceSettings.build({ device_id: deviceId });
     }
 
     return responseHelper.success(res, settings, 'Settings retrieved successfully');

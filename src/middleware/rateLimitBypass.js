@@ -7,6 +7,11 @@ const logger = require('../utils/logger');
  */
 exports.bypassRateLimitForSuperAdmin = async (req, res, next) => {
   try {
+    // GETs are already skipped or generously capped; avoid a users lookup on every read
+    if (req.method === 'GET') {
+      return next();
+    }
+
     // Extract token from header
     const authHeader = req.headers.authorization;
     
@@ -18,14 +23,17 @@ exports.bypassRateLimitForSuperAdmin = async (req, res, next) => {
         
         try {
           const decoded = jwt.verify(token, process.env.JWT_SECRET);
+          const userId = decoded.id || decoded.userId;
           
-          // Check if user is super admin
-          const user = await User.findByPk(decoded.userId);
-          
-          if (user && user.is_super_admin) {
-            // Skip rate limiting for super admins
-            req.skipRateLimit = true;
-            logger.debug(`Rate limit bypassed for super admin: ${user.email}`);
+          if (userId) {
+            const user = await User.findByPk(userId, {
+              attributes: ['id', 'email', 'is_super_admin']
+            });
+
+            if (user && user.is_super_admin) {
+              req.skipRateLimit = true;
+              logger.debug(`Rate limit bypassed for super admin: ${user.email}`);
+            }
           }
         } catch (jwtError) {
           // Invalid token, continue normally (rate limit will apply)
@@ -39,4 +47,3 @@ exports.bypassRateLimitForSuperAdmin = async (req, res, next) => {
     next();
   }
 };
-

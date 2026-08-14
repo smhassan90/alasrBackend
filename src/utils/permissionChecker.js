@@ -23,9 +23,9 @@ exports.isSuperAdmin = async (userId, preloadedUser = null) => {
  * @param {string} masjidId - Masjid ID
  * @returns {Promise<boolean>}
  */
-exports.isMasjidMember = async (userId, masjidId) => {
+exports.isMasjidMember = async (userId, masjidId, preloadedUser = null) => {
   // Super admin has access to all masajids
-  if (await exports.isSuperAdmin(userId)) {
+  if (await exports.isSuperAdmin(userId, preloadedUser)) {
     return true;
   }
   
@@ -42,8 +42,8 @@ exports.isMasjidMember = async (userId, masjidId) => {
  * @param {string} role - Role to check ('imam' or 'admin')
  * @returns {Promise<boolean>}
  */
-exports.hasRole = async (userId, masjidId, role) => {
-  if (await exports.isSuperAdmin(userId)) {
+exports.hasRole = async (userId, masjidId, role, preloadedUser = null) => {
+  if (await exports.isSuperAdmin(userId, preloadedUser)) {
     return true;
   }
   
@@ -59,8 +59,8 @@ exports.hasRole = async (userId, masjidId, role) => {
  * @param {string} masjidId - Masjid ID
  * @returns {Promise<boolean>}
  */
-exports.isMasjidImam = async (userId, masjidId) => {
-  return await exports.hasRole(userId, masjidId, 'imam');
+exports.isMasjidImam = async (userId, masjidId, preloadedUser = null) => {
+  return await exports.hasRole(userId, masjidId, 'imam', preloadedUser);
 };
 
 /**
@@ -69,8 +69,8 @@ exports.isMasjidImam = async (userId, masjidId) => {
  * @param {string} masjidId - Masjid ID
  * @returns {Promise<boolean>}
  */
-exports.isMasjidAdmin = async (userId, masjidId) => {
-  return await exports.hasRole(userId, masjidId, 'admin');
+exports.isMasjidAdmin = async (userId, masjidId, preloadedUser = null) => {
+  return await exports.hasRole(userId, masjidId, 'admin', preloadedUser);
 };
 
 /**
@@ -79,8 +79,8 @@ exports.isMasjidAdmin = async (userId, masjidId) => {
  * @param {string} masjidId - Masjid ID
  * @returns {Promise<boolean>}
  */
-exports.isMasjidImamOrAdmin = async (userId, masjidId) => {
-  if (await exports.isSuperAdmin(userId)) {
+exports.isMasjidImamOrAdmin = async (userId, masjidId, preloadedUser = null) => {
+  if (await exports.isSuperAdmin(userId, preloadedUser)) {
     return true;
   }
   
@@ -113,9 +113,9 @@ exports.getUserRoles = async (userId, masjidId) => {
  * @param {string} masjidId - Masjid ID
  * @returns {Promise<Object>}
  */
-exports.getUserPermissions = async (userId, masjidId) => {
+exports.getUserPermissions = async (userId, masjidId, preloadedUser = null) => {
   // Super admin has all permissions
-  if (await exports.isSuperAdmin(userId)) {
+  if (await exports.isSuperAdmin(userId, preloadedUser)) {
     return {
       can_view_complaints: true,
       can_answer_complaints: true,
@@ -186,8 +186,8 @@ exports.hasPermission = async (userId, masjidId, permission, preloadedUser = nul
  * @param {string} masjidId - Masjid ID
  * @returns {Promise<boolean>}
  */
-exports.canManagePrayerTimes = async (userId, masjidId) => {
-  return await exports.hasPermission(userId, masjidId, 'can_change_prayer_times');
+exports.canManagePrayerTimes = async (userId, masjidId, preloadedUser = null) => {
+  return await exports.hasPermission(userId, masjidId, 'can_change_prayer_times', preloadedUser);
 };
 
 /**
@@ -196,11 +196,11 @@ exports.canManagePrayerTimes = async (userId, masjidId) => {
  * @param {string} masjidId - Masjid ID
  * @returns {Promise<boolean>}
  */
-exports.canManageMasjid = async (userId, masjidId) => {
-  if (await exports.isSuperAdmin(userId)) {
+exports.canManageMasjid = async (userId, masjidId, preloadedUser = null) => {
+  if (await exports.isSuperAdmin(userId, preloadedUser)) {
     return true;
   }
-  return await exports.isMasjidAdmin(userId, masjidId);
+  return await exports.isMasjidAdmin(userId, masjidId, preloadedUser);
 };
 
 /**
@@ -209,11 +209,11 @@ exports.canManageMasjid = async (userId, masjidId) => {
  * @param {string} masjidId - Masjid ID
  * @returns {Promise<boolean>}
  */
-exports.canManageUsers = async (userId, masjidId) => {
-  if (await exports.isSuperAdmin(userId)) {
+exports.canManageUsers = async (userId, masjidId, preloadedUser = null) => {
+  if (await exports.isSuperAdmin(userId, preloadedUser)) {
     return true;
   }
-  return await exports.isMasjidAdmin(userId, masjidId);
+  return await exports.isMasjidAdmin(userId, masjidId, preloadedUser);
 };
 
 /**
@@ -264,8 +264,8 @@ exports.canAnswerComplaints = async (userId, masjidId) => {
  * @param {string} masjidId - Masjid ID
  * @returns {Promise<boolean>}
  */
-exports.canCreateEvents = async (userId, masjidId) => {
-  return await exports.hasPermission(userId, masjidId, 'can_create_events');
+exports.canCreateEvents = async (userId, masjidId, preloadedUser = null) => {
+  return await exports.hasPermission(userId, masjidId, 'can_create_events', preloadedUser);
 };
 
 /**
@@ -274,8 +274,8 @@ exports.canCreateEvents = async (userId, masjidId) => {
  * @param {string} masjidId - Masjid ID
  * @returns {Promise<boolean>}
  */
-exports.canCreateNotifications = async (userId, masjidId) => {
-  return await exports.hasPermission(userId, masjidId, 'can_create_notifications');
+exports.canCreateNotifications = async (userId, masjidId, preloadedUser = null) => {
+  return await exports.hasPermission(userId, masjidId, 'can_create_notifications', preloadedUser);
 };
 
 /**

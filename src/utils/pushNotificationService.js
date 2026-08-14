@@ -255,12 +255,14 @@ exports.sendBatchPushNotifications = async (fcmTokens, title, body, data = {}) =
   });
 
   try {
-    const createMessage = token => ({
+    // Send via multicast (up to 500 tokens per call) instead of per-token send()
+    const chunkSize = 500;
+    const results = [];
+
+    const multicastBase = {
       notification: {
         title: trimmedTitle,
         body: trimmedBody
-        // Note: 'sound' is not allowed in top-level notification object
-        // Sound is configured in platform-specific sections (android/apns) below
       },
       data: {
         ...data,
@@ -269,7 +271,6 @@ exports.sendBatchPushNotifications = async (fcmTokens, title, body, data = {}) =
           return acc;
         }, {})
       },
-      token: token,
       android: {
         priority: 'high',
         notification: {
@@ -297,35 +298,30 @@ exports.sendBatchPushNotifications = async (fcmTokens, title, body, data = {}) =
           }
         }
       }
-    });
+    };
 
-    // Send sequentially in manageable chunks to avoid /batch endpoint
-    const chunkSize = 100;
-    const results = [];
-    
     for (let i = 0; i < validTokens.length; i += chunkSize) {
       const chunk = validTokens.slice(i, i + chunkSize);
-      logger.debug(`Sending chunk ${i / chunkSize + 1} (${chunk.length} tokens)`);
+      logger.debug(`Sending multicast chunk ${i / chunkSize + 1} (${chunk.length} tokens)`);
 
-      const chunkPromises = chunk.map(async token => {
-        const message = createMessage(token);
+      try {
+        const response = await admin.messaging().sendEachForMulticast({
+          ...multicastBase,
+          tokens: chunk
+        });
 
-        try {
-          const messageId = await admin.messaging().send(message);
-          return {
-            token,
-            success: true,
-            messageId
-          };
-        } catch (error) {
-          // Mask token for logging (show first 10 and last 10 chars)
-          const maskedToken = token ? `${token.substring(0, 10)}...${token.substring(token.length - 10)}` : 'N/A';
-          logger.error(`Failed to send notification to token ${maskedToken}: ${error.message}`, {
-            code: error.code,
-            errorType: error.code || 'unknown'
-          });
+        response.responses.forEach((item, index) => {
+          const token = chunk[index];
+          if (item.success) {
+            results.push({
+              token,
+              success: true,
+              messageId: item.messageId
+            });
+            return;
+          }
 
-          // Identify auth/config errors once to return immediately
+          const error = item.error || {};
           const errorMsg = error.message || '';
           const isConfigError = (
             (errorMsg.includes('404') && errorMsg.includes('/batch')) ||
@@ -343,24 +339,25 @@ exports.sendBatchPushNotifications = async (fcmTokens, title, body, data = {}) =
             });
           }
 
-          return {
+          const maskedToken = token ? `${token.substring(0, 10)}...${token.substring(token.length - 10)}` : 'N/A';
+          logger.error(`Failed to send notification to token ${maskedToken}: ${error.message}`, {
+            code: error.code,
+            errorType: error.code || 'unknown'
+          });
+
+          results.push({
             token,
             success: false,
             error: {
               code: error.code || 'unknown',
               message: error.message || 'Unknown error occurred'
             }
-          };
-        }
-      });
-
-      try {
-        const chunkResults = await Promise.all(chunkPromises);
-        results.push(...chunkResults);
+          });
+        });
       } catch (chunkError) {
         if (chunkError.isConfigError) {
           const errorMessage = `Firebase Cloud Messaging API error: ${chunkError.message}. Possible causes: 1) Cloud Messaging API not enabled for your Firebase project, 2) Service account lacks IAM permissions (needs "Firebase Cloud Messaging API Service Agent" role), 3) Project ID mismatch.`;
-          
+
           return {
             success: false,
             error: errorMessage,
@@ -370,8 +367,7 @@ exports.sendBatchPushNotifications = async (fcmTokens, title, body, data = {}) =
           };
         }
 
-        // Unexpected rejection - log and continue
-        logger.error('Unexpected error while sending chunk:', {
+        logger.error('Unexpected error while sending multicast chunk:', {
           message: chunkError.message,
           code: chunkError.code,
           stack: chunkError.stack
