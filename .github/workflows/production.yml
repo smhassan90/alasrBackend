@@ -11,13 +11,43 @@ on:
       - '.npmrc'
       - 'README.md'
       - 'docs/**'
+  schedule:
+    # Daily Maghrib sync (~19:05 UTC). Apps also get correct Maghrib on /today reads.
+    - cron: '5 19 * * *'
+  workflow_dispatch:
+    inputs:
+      run_maghrib_sync:
+        description: 'Run Maghrib sync only (skip deploy)'
+        required: false
+        type: boolean
+        default: true
 
 env:
   NODE_VERSION: '18.x'
+  PRODUCTION_API_URL: 'https://alasrbackend.vercel.app'
 
 jobs:
+  sync-maghrib:
+    name: Sync Maghrib schedules
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.run_maghrib_sync == true)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Maghrib sync
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "CRON_SECRET GitHub secret is not set"
+            exit 1
+          fi
+          curl -fsS -X POST \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            -H "Content-Type: application/json" \
+            "${PRODUCTION_API_URL}/api/v1/cron/update-maghrib"
+
   build-and-deploy:
     name: Build and Deploy to Production
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     
     steps:
@@ -97,7 +127,7 @@ jobs:
     name: Notify on success
     needs: build-and-deploy
     runs-on: ubuntu-latest
-    if: success()
+    if: github.event_name == 'push' && success()
     
     steps:
       - name: Deployment success notification
