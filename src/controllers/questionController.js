@@ -3,7 +3,6 @@ const responseHelper = require('../utils/responseHelper');
 const emailService = require('../utils/emailService');
 const logger = require('../utils/logger');
 const pushNotificationService = require('../utils/pushNotificationService');
-const permissionChecker = require('../utils/permissionChecker');
 const { Op } = require('sequelize');
 const { generateDeviceId, isValidDeviceId } = require('../utils/deviceId');
 
@@ -317,31 +316,34 @@ exports.setQuestions = async (req, res) => {
  * @route PUT /api/questions/:id/reply
  */
 exports.replyToQuestion = async (req, res) => {
+  const startedAt = Date.now();
   try {
     const { id } = req.params;
     const { reply } = req.body;
 
-    const question = await Question.findByPk(id, {
-      include: [
-        {
-          model: Masjid,
-          as: 'masjid',
-          attributes: ['id', 'name']
-        }
-      ]
-    });
+    // Prefer question already loaded by canAnswerQuestions middleware
+    let question = req.question;
+    if (!question || question.id !== id) {
+      question = await Question.findByPk(id, {
+        include: [
+          {
+            model: Masjid,
+            as: 'masjid',
+            attributes: ['id', 'name']
+          }
+        ]
+      });
+    }
     if (!question) {
       return responseHelper.notFound(res, 'Question not found');
     }
 
-    const hasPermission = await permissionChecker.canAnswerQuestions(req.userId, question.masjid_id);
-    if (!hasPermission) {
-      return responseHelper.forbidden(res, 'You do not have permission to answer questions for this masjid');
-    }
+    // Permission already verified by canAnswerQuestions middleware.
+    // authenticate() already loaded the user, so avoid re-querying it.
+    let replier = req.user && req.user.id === req.userId
+      ? { id: req.user.id, name: req.user.name, email: req.user.email }
+      : await User.findByPk(req.userId, { attributes: ['id', 'name', 'email'] });
 
-    const replier = await User.findByPk(req.userId, {
-      attributes: ['id', 'name', 'email']
-    });
     if (!replier) {
       return responseHelper.forbidden(res, 'Replier not found');
     }
@@ -355,19 +357,21 @@ exports.replyToQuestion = async (req, res) => {
     question.setDataValue('replier', replier);
     question.setDataValue('replied_by_name', replier.name);
 
-    // Send email notification if user provided email
-    if (question.user_email) {
-      emailService.sendQuestionReplyEmail(question.user_email, question.title, reply).catch(err =>
-        logger.error(`Failed to send reply email: ${err.message}`)
+    logger.info(`Question ${id} replied by ${req.userId} in ${Date.now() - startedAt}ms`);
+
+    // Notify after responding so email/FCM never block the API response
+    const masjid = question.masjid || { id: question.masjid_id, name: 'Masjid' };
+    setImmediate(() => {
+      if (question.user_email) {
+        emailService.sendQuestionReplyEmail(question.user_email, question.title, reply).catch(err =>
+          logger.error(`Failed to send reply email: ${err.message}`)
+        );
+      }
+
+      sendQuestionReplyNotification(masjid, question, reply, replier.name).catch(err =>
+        logger.error(`Failed to send question reply notification: ${err.message}`)
       );
-    }
-
-    // Send push notification to the user who asked the question
-    sendQuestionReplyNotification(question.masjid, question, reply, replier.name).catch(err =>
-      logger.error(`Failed to send question reply notification: ${err.message}`)
-    );
-
-    logger.info(`Question ${id} replied by ${req.userId}`);
+    });
 
     return responseHelper.success(res, question, 'Reply sent successfully');
   } catch (error) {
@@ -563,117 +567,111 @@ async function sendQuestionNotificationToImams(masjid, question) {
 }
 
 /**
- * Send push notification to user when their question is replied to
- * @param {Object} masjid - Masjid object
- * @param {Object} question - Question object
- * @param {string} reply - Reply text
+ * Find anonymous subscriptions whose raw device_id hashes to the question's hashed device_id.
+ * Questions store hashed device IDs; subscriptions often store the raw client device ID.
+ */
+function matchHashedDeviceSubscriptions(questionDeviceId, anonymousSubs) {
+  const commonPlatforms = ['android', 'ios', 'web'];
+  const commonAppVersions = ['', '1.0.0', '1.0'];
+  const matches = [];
+
+  for (const sub of anonymousSubs) {
+    if (!sub.device_id) continue;
+    // Already hashed — exact DB match would have caught it
+    if (sub.device_id.length === 32 && /^[a-f0-9]{32}$/i.test(sub.device_id)) {
+      continue;
+    }
+
+    let matched = false;
+    for (const platform of commonPlatforms) {
+      for (const appVersion of commonAppVersions) {
+        try {
+          if (generateDeviceId(sub.device_id, platform, appVersion) === questionDeviceId) {
+            matches.push(sub);
+            matched = true;
+            break;
+          }
+        } catch (err) {
+          // Skip invalid device_id
+        }
+      }
+      if (matched) break;
+    }
+  }
+
+  return matches;
+}
+
+/**
+ * Send push notification to user when their question is replied to.
+ * Queries only the asker's subscription(s) — not every subscriber on the masjid.
  */
 async function sendQuestionReplyNotification(masjid, question, reply, replierName) {
   try {
     logger.info(`Starting reply notification for question ${question.id}, masjid ${masjid.id}, user_id: ${question.user_id || 'N/A'}, device_id: ${question.device_id || 'N/A'}`);
-    
-    // Get ALL active subscriptions for this masjid (similar to send-push endpoint)
-    const allSubscriptions = await MasjidSubscription.findAll({
-      where: {
-        masjid_id: masjid.id,
-        is_active: true,
-        fcm_token: { [Op.ne]: null }
-      },
-      include: [
-        {
-          model: User,
-          as: 'user',
-          required: false,
-          include: [
-            {
-              model: UserSettings,
-              as: 'settings',
-              required: false
-            }
-          ]
-        }
-      ]
-    });
 
-    logger.info(`Found ${allSubscriptions.length} active subscriptions with FCM tokens for masjid ${masjid.id}`);
-
-    if (allSubscriptions.length === 0) {
-      logger.warn(`No active subscriptions with FCM tokens found for masjid ${masjid.id} - notification cannot be sent`);
-      return;
-    }
-
-    // Get device settings for all anonymous subscriptions
-    const anonymousDeviceIds = allSubscriptions
-      .filter(sub => !sub.user_id && sub.device_id)
-      .map(sub => sub.device_id);
-    
-    const deviceSettingsMap = {};
-    if (anonymousDeviceIds.length > 0) {
-      const deviceSettings = await DeviceSettings.findAll({
-        where: { device_id: { [Op.in]: anonymousDeviceIds } }
-      });
-      deviceSettings.forEach(ds => {
-        deviceSettingsMap[ds.device_id] = ds;
-      });
-    }
-
-    // Filter subscriptions to find the one that matches the question's user
-    // If question has user_id, match by user_id
-    // If question has device_id, try to match by device_id (handling hash vs raw format mismatch)
     let targetSubscriptions = [];
 
     if (question.user_id) {
-      // Match by user_id
-      targetSubscriptions = allSubscriptions.filter(sub => sub.user_id === question.user_id);
+      targetSubscriptions = await MasjidSubscription.findAll({
+        where: {
+          masjid_id: masjid.id,
+          user_id: question.user_id,
+          is_active: true,
+          fcm_token: { [Op.ne]: null }
+        },
+        include: [
+          {
+            model: User,
+            as: 'user',
+            required: false,
+            attributes: ['id'],
+            include: [
+              {
+                model: UserSettings,
+                as: 'settings',
+                required: false,
+                attributes: ['questions_notifications']
+              }
+            ]
+          }
+        ]
+      });
       logger.info(`Matching by user_id for question ${question.id}: found ${targetSubscriptions.length} subscriptions`);
     } else if (question.device_id) {
-      // Question device_id is a hash (32 chars), subscription device_id might be raw or also hashed
-      // Try exact match first (handles case where both are hashed or both are raw)
-      targetSubscriptions = allSubscriptions.filter(sub => 
-        !sub.user_id && sub.device_id && sub.device_id === question.device_id
-      );
-      
-      logger.info(`Question ${question.id} device_id: ${question.device_id}, checking ${allSubscriptions.filter(s => !s.user_id && s.device_id).length} anonymous subscriptions`);
-      
-      // If no exact match, try to match by hashing subscription device_ids
-      // Question device_id is a hash (32 hex chars from generateDeviceId)
-      // Subscription device_id might be raw, so we need to hash it to compare
-      if (targetSubscriptions.length === 0 && question.device_id.length === 32 && /^[a-f0-9]{32}$/i.test(question.device_id)) {
-        // Question device_id is a hash, try to match by hashing subscription device_ids
-        // Try common platform/appVersion combinations
-        const anonymousSubs = allSubscriptions.filter(sub => !sub.user_id && sub.device_id);
-        const commonPlatforms = ['android', 'ios', 'web'];
-        const commonAppVersions = ['', '1.0.0', '1.0'];
-        
-        for (const sub of anonymousSubs) {
-          // Skip if subscription device_id is already a hash (32 hex chars)
-          if (sub.device_id.length === 32 && /^[a-f0-9]{32}$/i.test(sub.device_id)) {
-            continue; // Already a hash, exact match would have caught it
-          }
-          
-          // Try hashing with common platform/appVersion combinations
-          for (const platform of commonPlatforms) {
-            for (const appVersion of commonAppVersions) {
-              try {
-                const hashedDeviceId = generateDeviceId(sub.device_id, platform, appVersion);
-                if (hashedDeviceId === question.device_id) {
-                  targetSubscriptions.push(sub);
-                  logger.info(`Matched question ${question.id} device_id by hashing subscription device_id with platform=${platform}, appVersion=${appVersion}`);
-                  break; // Found match, no need to try other combinations
-                }
-              } catch (err) {
-                // Skip invalid device_id
-                continue;
-              }
-            }
-            if (targetSubscriptions.length > 0 && targetSubscriptions.includes(sub)) {
-              break; // Already matched this subscription
-            }
-          }
-        }
-        
+      // Exact match first (indexed lookup)
+      targetSubscriptions = await MasjidSubscription.findAll({
+        where: {
+          masjid_id: masjid.id,
+          device_id: question.device_id,
+          user_id: { [Op.is]: null },
+          is_active: true,
+          fcm_token: { [Op.ne]: null }
+        },
+        attributes: ['id', 'device_id', 'fcm_token', 'user_id']
+      });
+
+      // Fallback: question device_id is hashed, subscription may store raw device_id
+      if (
+        targetSubscriptions.length === 0 &&
+        question.device_id.length === 32 &&
+        /^[a-f0-9]{32}$/i.test(question.device_id)
+      ) {
+        const anonymousSubs = await MasjidSubscription.findAll({
+          where: {
+            masjid_id: masjid.id,
+            user_id: { [Op.is]: null },
+            device_id: { [Op.ne]: null },
+            is_active: true,
+            fcm_token: { [Op.ne]: null }
+          },
+          attributes: ['id', 'device_id', 'fcm_token', 'user_id']
+        });
+
+        targetSubscriptions = matchHashedDeviceSubscriptions(question.device_id, anonymousSubs);
+
         if (targetSubscriptions.length === 0) {
-          logger.warn(`No device_id match found for question ${question.id} (hash: ${question.device_id}). Tried hashing ${anonymousSubs.length} subscription device_ids with common platform/appVersion combinations but no match found.`);
+          logger.warn(`No device_id match found for question ${question.id} (hash: ${question.device_id}) among ${anonymousSubs.length} anonymous subscriptions`);
         } else {
           logger.info(`Matched question ${question.id} device_id by hashing: found ${targetSubscriptions.length} subscriptions`);
         }
@@ -681,28 +679,38 @@ async function sendQuestionReplyNotification(masjid, question, reply, replierNam
         logger.info(`Exact device_id match found for question ${question.id}: ${targetSubscriptions.length} subscriptions`);
       }
     } else {
-      // No user_id or device_id - cannot send notification
       logger.warn(`Question ${question.id} has no user_id or device_id, cannot send notification`);
       return;
     }
 
     if (targetSubscriptions.length === 0) {
       logger.warn(`No matching subscriptions found for question ${question.id} (user_id: ${question.user_id || 'N/A'}, device_id: ${question.device_id || 'N/A'})`);
-      logger.warn(`Available subscriptions: ${allSubscriptions.length} total (${allSubscriptions.filter(s => s.user_id).length} authenticated, ${allSubscriptions.filter(s => !s.user_id).length} anonymous)`);
       return;
     }
 
-    // Filter by user preferences for question notifications
+    // Load notification prefs only for matched anonymous devices
+    const anonymousDeviceIds = targetSubscriptions
+      .filter(sub => !sub.user_id && sub.device_id)
+      .map(sub => sub.device_id);
+
+    const deviceSettingsMap = {};
+    if (anonymousDeviceIds.length > 0) {
+      const deviceSettings = await DeviceSettings.findAll({
+        where: { device_id: { [Op.in]: anonymousDeviceIds } },
+        attributes: ['device_id', 'questions_notifications']
+      });
+      deviceSettings.forEach(ds => {
+        deviceSettingsMap[ds.device_id] = ds;
+      });
+    }
+
     const validSubscriptions = targetSubscriptions.filter(sub => {
       if (sub.user_id) {
-        // Authenticated user - check user settings
         const settings = sub.user?.settings;
-        // Default to true if no settings (as per UserSettings model default)
         return !settings || settings.questions_notifications !== false;
-      } else if (sub.device_id) {
-        // Anonymous user - check device settings
+      }
+      if (sub.device_id) {
         const deviceSettings = deviceSettingsMap[sub.device_id];
-        // Default to true if no settings (as per DeviceSettings model default)
         return !deviceSettings || deviceSettings.questions_notifications !== false;
       }
       return false;
@@ -713,27 +721,21 @@ async function sendQuestionReplyNotification(masjid, question, reply, replierNam
       return;
     }
 
-    logger.info(`Found ${validSubscriptions.length} valid subscriptions for question ${question.id} (user_id: ${question.user_id || 'N/A'}, device_id: ${question.device_id || 'N/A'})`);
-
-    // Collect FCM tokens, ensure uniqueness
     const fcmTokens = [...new Set(validSubscriptions
       .map(sub => sub.fcm_token)
       .filter(token => token && token.trim() !== ''))];
 
     if (fcmTokens.length === 0) {
-      logger.warn(`No valid FCM tokens found for question ${question.id} after filtering (had ${validSubscriptions.length} valid subscriptions)`);
+      logger.warn(`No valid FCM tokens found for question ${question.id} after filtering`);
       return;
     }
 
     logger.info(`Sending question reply notification to ${fcmTokens.length} FCM tokens for question ${question.id}`);
 
-    // Prepare notification message
     const title = `Reply to Your Question - ${masjid.name}`;
-    // Truncate reply if too long for notification body
     const replyPreview = reply.length > 100 ? reply.substring(0, 100) + '...' : reply;
     const body = `Your question "${question.title}" has been answered by ${replierName || 'the imam'}: ${replyPreview}`;
 
-    // Prepare notification data
     const notificationData = {
       masjidId: masjid.id,
       masjidName: masjid.name,
@@ -744,7 +746,6 @@ async function sendQuestionReplyNotification(masjid, question, reply, replierNam
       repliedByName: replierName || ''
     };
 
-    // Send push notification
     const result = await pushNotificationService.sendBatchPushNotifications(
       fcmTokens,
       title,
@@ -784,7 +785,7 @@ async function sendQuestionReplyNotification(masjid, question, reply, replierNam
   } catch (error) {
     logger.error(`Error sending question reply notification for question ${question.id}: ${error.message}`, {
       questionId: question.id,
-      masjidId: masjid.id,
+      masjidId: masjid?.id,
       error: error.message,
       stack: error.stack
     });

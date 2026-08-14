@@ -71,7 +71,8 @@ const limiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   // Skip rate limiting if request has skipRateLimit flag (set by super admin bypass)
-  skip: (req) => req.skipRateLimit === true
+  // Also skip for cron jobs (Vercel Cron / manual secret-authenticated sync)
+  skip: (req) => req.skipRateLimit === true || req.path.includes('/cron/')
 });
 
 // Super admin bypass middleware (checks before rate limiting)

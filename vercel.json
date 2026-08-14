@@ -16,6 +16,11 @@
       "maxDuration": 30,
       "memory": 1024
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/v1/cron/update-maghrib",
+      "schedule": "5 19 * * *"
+    }
+  ]
 }
-

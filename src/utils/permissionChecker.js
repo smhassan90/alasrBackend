@@ -3,11 +3,18 @@ const { UserMasjid, User } = require('../models');
 /**
  * Check if user is super admin
  * @param {string} userId - User ID
+ * @param {Object} [preloadedUser] - User already loaded by auth middleware, avoids a query
  * @returns {Promise<boolean>}
  */
-exports.isSuperAdmin = async (userId) => {
-  const user = await User.findByPk(userId);
-  return user && user.is_super_admin;
+exports.isSuperAdmin = async (userId, preloadedUser = null) => {
+  if (preloadedUser && preloadedUser.id === userId) {
+    return !!preloadedUser.is_super_admin;
+  }
+
+  const user = await User.findByPk(userId, {
+    attributes: ['id', 'is_super_admin']
+  });
+  return !!(user && user.is_super_admin);
 };
 
 /**
@@ -152,16 +159,18 @@ exports.getUserPermissions = async (userId, masjidId) => {
  * @param {string} userId - User ID
  * @param {string} masjidId - Masjid ID
  * @param {string} permission - Permission name
+ * @param {Object} [preloadedUser] - User already loaded by auth middleware, avoids a query
  * @returns {Promise<boolean>}
  */
-exports.hasPermission = async (userId, masjidId, permission) => {
+exports.hasPermission = async (userId, masjidId, permission, preloadedUser = null) => {
   // Super admin has all permissions
-  if (await exports.isSuperAdmin(userId)) {
+  if (await exports.isSuperAdmin(userId, preloadedUser)) {
     return true;
   }
 
   const association = await UserMasjid.findOne({
-    where: { user_id: userId, masjid_id: masjidId }
+    where: { user_id: userId, masjid_id: masjidId },
+    attributes: ['id', permission]
   });
 
   if (!association) {
@@ -211,20 +220,22 @@ exports.canManageUsers = async (userId, masjidId) => {
  * Check if user can view questions
  * @param {string} userId - User ID
  * @param {string} masjidId - Masjid ID
+ * @param {Object} [preloadedUser] - User already loaded by auth middleware, avoids a query
  * @returns {Promise<boolean>}
  */
-exports.canViewQuestions = async (userId, masjidId) => {
-  return await exports.hasPermission(userId, masjidId, 'can_view_questions');
+exports.canViewQuestions = async (userId, masjidId, preloadedUser = null) => {
+  return await exports.hasPermission(userId, masjidId, 'can_view_questions', preloadedUser);
 };
 
 /**
  * Check if user can answer questions
  * @param {string} userId - User ID
  * @param {string} masjidId - Masjid ID
+ * @param {Object} [preloadedUser] - User already loaded by auth middleware, avoids a query
  * @returns {Promise<boolean>}
  */
-exports.canAnswerQuestions = async (userId, masjidId) => {
-  return await exports.hasPermission(userId, masjidId, 'can_answer_questions');
+exports.canAnswerQuestions = async (userId, masjidId, preloadedUser = null) => {
+  return await exports.hasPermission(userId, masjidId, 'can_answer_questions', preloadedUser);
 };
 
 /**

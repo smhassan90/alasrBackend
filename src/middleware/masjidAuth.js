@@ -229,7 +229,7 @@ exports.canViewQuestions = async (req, res, next) => {
       return responseHelper.error(res, 'Masjid ID is required', 400);
     }
 
-    const canView = await permissionChecker.canViewQuestions(userId, masjidId);
+    const canView = await permissionChecker.canViewQuestions(userId, masjidId, req.user);
 
     if (!canView) {
       return responseHelper.forbidden(res, 'You do not have permission to view questions for this masjid');
@@ -252,24 +252,56 @@ exports.canAnswerQuestions = async (req, res, next) => {
     const userId = req.userId;
     let masjidId = req.params.masjidId || req.body.masjidId;
 
-    // If masjidId is not in params or body, try to get it from the question
-    // This handles routes like PUT /questions/:id/reply
+    // If masjidId is not in params or body, get it from the question.
+    // This handles routes like PUT /questions/:id/reply, where the question and the
+    // user's permissions are fetched together instead of one after the other.
     if (!masjidId && req.params.id) {
-      const { Question } = require('../models');
-      const question = await Question.findByPk(req.params.id);
-      
+      const { Question, Masjid, UserMasjid } = require('../models');
+      const isSuperAdmin = !!req.user?.is_super_admin;
+
+      const [question, associations] = await Promise.all([
+        Question.findByPk(req.params.id, {
+          include: [
+            {
+              model: Masjid,
+              as: 'masjid',
+              attributes: ['id', 'name']
+            }
+          ]
+        }),
+        isSuperAdmin
+          ? Promise.resolve([])
+          : UserMasjid.findAll({
+              where: { user_id: userId },
+              attributes: ['masjid_id', 'can_answer_questions']
+            })
+      ]);
+
       if (!question) {
         return responseHelper.notFound(res, 'Question not found');
       }
-      
+
+      // Reuse in controller to avoid a second Question.findByPk
+      req.question = question;
       masjidId = question.masjid_id;
+
+      const canAnswer = isSuperAdmin || associations.some(
+        association => association.masjid_id === masjidId && association.can_answer_questions === true
+      );
+
+      if (!canAnswer) {
+        return responseHelper.forbidden(res, 'You do not have permission to answer questions for this masjid');
+      }
+
+      req.masjidId = masjidId;
+      return next();
     }
 
     if (!masjidId) {
       return responseHelper.error(res, 'Masjid ID is required', 400);
     }
 
-    const canAnswer = await permissionChecker.canAnswerQuestions(userId, masjidId);
+    const canAnswer = await permissionChecker.canAnswerQuestions(userId, masjidId, req.user);
 
     if (!canAnswer) {
       return responseHelper.forbidden(res, 'You do not have permission to answer questions for this masjid');

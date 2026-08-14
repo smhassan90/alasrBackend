@@ -2,6 +2,7 @@ const { PrayerTime, Masjid, User, MasjidSubscription, UserSettings, DeviceSettin
 const responseHelper = require('../utils/responseHelper');
 const logger = require('../utils/logger');
 const pushNotificationService = require('../utils/pushNotificationService');
+const maghribScheduleService = require('../services/maghribScheduleService');
 const { Op } = require('sequelize');
 
 // Debounce mechanism to prevent duplicate notifications
@@ -72,7 +73,17 @@ exports.getPrayerTimesByMasjid = async (req, res) => {
 exports.getTodaysPrayerTimes = async (req, res) => {
   try {
     const { masjidId } = req.params;
-    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    const masjid = await Masjid.findByPk(masjidId, {
+      attributes: ['id', 'name', 'city', 'created_by']
+    });
+    if (!masjid) {
+      return responseHelper.notFound(res, 'Masjid not found');
+    }
+
+    // Use city-local date when Maghrib is automated for this city
+    const today = maghribScheduleService.hasAutomatedMaghrib(masjid.city)
+      ? maghribScheduleService.getTodayForCity(masjid.city)
+      : new Date().toISOString().split('T')[0];
 
     const prayerTimes = await PrayerTime.findAll({
       where: {
@@ -95,7 +106,16 @@ exports.getTodaysPrayerTimes = async (req, res) => {
       }
     });
 
-    const result = Object.values(latestPrayerTimes);
+    let result = Object.values(latestPrayerTimes);
+
+    // Maghrib is driven by city sunset schedule when available
+    if (maghribScheduleService.hasAutomatedMaghrib(masjid.city)) {
+      result = maghribScheduleService.applyScheduledMaghribToPrayerTimes(masjid, result, today);
+      // Keep DB in sync without blocking the response
+      maghribScheduleService.syncMaghribForMasjid(masjid, today).catch(err =>
+        logger.error(`Background Maghrib sync failed for masjid ${masjidId}: ${err.message}`)
+      );
+    }
 
     return responseHelper.success(res, result, 'Today\'s prayer times retrieved successfully');
   } catch (error) {
@@ -115,6 +135,16 @@ exports.createPrayerTime = async (req, res) => {
     const masjid = await Masjid.findByPk(masjidId);
     if (!masjid) {
       return responseHelper.notFound(res, 'Masjid not found');
+    }
+
+    // Maghrib is automated from city sunset schedule — imams cannot set it manually
+    if (prayerName === 'Maghrib' && maghribScheduleService.hasAutomatedMaghrib(masjid.city)) {
+      const syncResult = await maghribScheduleService.syncMaghribForMasjid(masjid, effectiveDate || null);
+      return responseHelper.success(
+        res,
+        syncResult.prayerTime,
+        `Maghrib is auto-set from ${masjid.city} sunset schedule and cannot be updated manually`
+      );
     }
 
     const date = effectiveDate || new Date().toISOString().split('T')[0];
@@ -197,6 +227,18 @@ exports.updatePrayerTime = async (req, res) => {
       return responseHelper.notFound(res, 'Prayer time not found');
     }
 
+    if (
+      prayerTimeRecord.prayer_name === 'Maghrib' &&
+      maghribScheduleService.hasAutomatedMaghrib(prayerTimeRecord.masjid?.city)
+    ) {
+      const syncResult = await maghribScheduleService.syncMaghribForMasjid(prayerTimeRecord.masjid);
+      return responseHelper.success(
+        res,
+        syncResult.prayerTime || prayerTimeRecord,
+        `Maghrib is auto-set from ${prayerTimeRecord.masjid.city} sunset schedule and cannot be updated manually`
+      );
+    }
+
     // Check if prayer time actually changed
     const oldTime = prayerTimeRecord.prayer_time;
     let timeChanged = false;
@@ -270,11 +312,17 @@ exports.bulkUpdatePrayerTimes = async (req, res) => {
     }
 
     const date = effectiveDate || new Date().toISOString().split('T')[0];
+    const maghribAutomated = maghribScheduleService.hasAutomatedMaghrib(masjid.city);
 
     const createdPrayerTimes = [];
     let hasChanges = false;
 
     for (const pt of prayerTimes) {
+      // Skip manual Maghrib when city has an automated sunset schedule
+      if (pt.prayerName === 'Maghrib' && maghribAutomated) {
+        continue;
+      }
+
       // Check if exists
       const existing = await PrayerTime.findOne({
         where: {
@@ -314,6 +362,18 @@ exports.bulkUpdatePrayerTimes = async (req, res) => {
     }
 
     await transaction.commit();
+
+    // Always keep Maghrib aligned with city sunset schedule
+    if (maghribAutomated) {
+      try {
+        const syncResult = await maghribScheduleService.syncMaghribForMasjid(masjid, date);
+        if (syncResult.prayerTime) {
+          createdPrayerTimes.push(syncResult.prayerTime);
+        }
+      } catch (err) {
+        logger.error(`Failed to auto-sync Maghrib after bulk update for masjid ${masjidId}: ${err.message}`);
+      }
+    }
 
     logger.info(`Bulk prayer times updated for masjid ${masjidId} by ${req.userId}`);
 
