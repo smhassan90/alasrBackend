@@ -106,21 +106,24 @@ jobs:
           echo "🚀 Deploying to Vercel..."
       
       - name: Deploy to Vercel
-        uses: amondnet/vercel-action@v25
-        with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-          vercel-args: '--prod'
-          working-directory: ./
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          if [ -z "$VERCEL_TOKEN" ]; then
+            echo "VERCEL_TOKEN secret is not set"
+            exit 1
+          fi
+          npx --yes vercel@latest pull --yes --environment=production --token="$VERCEL_TOKEN"
+          url=$(npx --yes vercel@latest deploy --prod --token="$VERCEL_TOKEN")
+          echo "DEPLOYMENT_URL=$url" >> "$GITHUB_ENV"
+          echo "Deployed to $url"
       
       - name: Deployment complete
         run: |
           echo "✅ Deployment to Vercel completed!"
+          echo "🔗 Deployment URL: ${{ env.DEPLOYMENT_URL }}"
           echo "🔗 Live URL: https://alasrbackend.vercel.app"
 
   notify:
