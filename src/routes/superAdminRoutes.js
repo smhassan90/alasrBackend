@@ -48,5 +48,8 @@ router.post('/imams/:imamId/subscription', superAdminValidator.addImamFcmTokenVa
 router.get('/config/app', superAdminController.getAppConfig);
 router.put('/config/app', superAdminValidator.updateAppConfigValidator, validate, superAdminController.updateAppConfig);
 
+// Maghrib auto-sync (manual trigger)
+router.post('/sync-maghrib', superAdminController.syncMaghribSchedules);
+
 module.exports = router;
 

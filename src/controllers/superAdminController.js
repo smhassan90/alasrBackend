@@ -1081,3 +1081,21 @@ exports.updateAppConfig = async (req, res) => {
   }
 };
 
+/**
+ * Manually sync Maghrib prayer times from city sunset schedules (Super Admin only)
+ * @route POST /api/super-admin/sync-maghrib
+ */
+exports.syncMaghribSchedules = async (req, res) => {
+  try {
+    const maghribScheduleService = require('../services/maghribScheduleService');
+    const summary = await maghribScheduleService.syncMaghribForAllScheduledCities();
+
+    logger.info(`Super admin ${req.userId} triggered Maghrib sync: ${JSON.stringify(summary)}`);
+
+    return responseHelper.success(res, summary, 'Maghrib schedules synced successfully');
+  } catch (error) {
+    logger.error(`Super admin Maghrib sync error: ${error.message}`);
+    return responseHelper.error(res, 'Failed to sync Maghrib schedules', 500);
+  }
+};
+

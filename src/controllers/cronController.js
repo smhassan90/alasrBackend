@@ -3,24 +3,45 @@ const logger = require('../utils/logger');
 const maghribScheduleService = require('../services/maghribScheduleService');
 
 /**
+ * Authorize cron callers:
+ * - Authorization: Bearer <CRON_SECRET> (Vercel sets this when CRON_SECRET env is present)
+ * - x-cron-secret: <CRON_SECRET>
+ * - ?secret=<CRON_SECRET>
+ * - x-vercel-cron: 1 (Vercel cron invocation header) when CRON_SECRET is not configured
+ */
+function isAuthorizedCronRequest(req) {
+  const expectedSecret = process.env.CRON_SECRET;
+  const authHeader = req.headers.authorization || '';
+  const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  const headerSecret = req.headers['x-cron-secret'];
+  const providedSecret = bearerToken || headerSecret || req.query.secret;
+  const isVercelCron = req.headers['x-vercel-cron'] === '1';
+
+  if (expectedSecret) {
+    return providedSecret === expectedSecret;
+  }
+
+  // Without CRON_SECRET, only allow verified Vercel cron invocations
+  if (isVercelCron) {
+    logger.warn('CRON_SECRET is not set; allowing request via x-vercel-cron header');
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * Daily cron: auto-update Maghrib for all masajids in scheduled cities.
  * @route GET/POST /api/v1/cron/update-maghrib
- * Protected by CRON_SECRET (Authorization: Bearer <secret> or x-cron-secret header)
  */
 exports.updateMaghribSchedules = async (req, res) => {
   try {
-    const expectedSecret = process.env.CRON_SECRET;
-    if (!expectedSecret) {
-      logger.error('CRON_SECRET is not configured');
-      return responseHelper.error(res, 'Cron is not configured', 500);
+    if (!process.env.CRON_SECRET && req.headers['x-vercel-cron'] !== '1') {
+      logger.error('CRON_SECRET is not configured and request is not a Vercel cron');
+      return responseHelper.error(res, 'Cron is not configured. Set CRON_SECRET in Vercel env.', 500);
     }
 
-    const authHeader = req.headers.authorization || '';
-    const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
-    const headerSecret = req.headers['x-cron-secret'];
-    const providedSecret = bearerToken || headerSecret || req.query.secret;
-
-    if (providedSecret !== expectedSecret) {
+    if (!isAuthorizedCronRequest(req)) {
       return responseHelper.forbidden(res, 'Invalid cron secret');
     }
 

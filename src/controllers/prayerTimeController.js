@@ -110,11 +110,13 @@ exports.getTodaysPrayerTimes = async (req, res) => {
 
     // Maghrib is driven by city sunset schedule when available
     if (maghribScheduleService.hasAutomatedMaghrib(masjid.city)) {
+      // Await sync so Vercel serverless does not freeze before DB write finishes
+      try {
+        await maghribScheduleService.syncMaghribForMasjid(masjid, today);
+      } catch (err) {
+        logger.error(`Maghrib sync failed for masjid ${masjidId}: ${err.message}`);
+      }
       result = maghribScheduleService.applyScheduledMaghribToPrayerTimes(masjid, result, today);
-      // Keep DB in sync without blocking the response
-      maghribScheduleService.syncMaghribForMasjid(masjid, today).catch(err =>
-        logger.error(`Background Maghrib sync failed for masjid ${masjidId}: ${err.message}`)
-      );
     }
 
     return responseHelper.success(res, result, 'Today\'s prayer times retrieved successfully');

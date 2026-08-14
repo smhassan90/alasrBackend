@@ -86,11 +86,59 @@ function toDateOnly(date) {
 }
 
 /**
- * Get Maghrib (sunset) schedule entry for a city on a given date.
- * Uses the latest schedule row with date <= targetDate.
+ * Parse YYYY-MM-DD to UTC midnight Date for day-diff math.
+ * @param {string} dateStr
+ * @returns {Date}
+ */
+function parseDateOnly(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d));
+}
+
+/**
+ * Whole days between two YYYY-MM-DD dates (end - start).
+ * @param {string} startDate
+ * @param {string} endDate
+ * @returns {number}
+ */
+function daysBetween(startDate, endDate) {
+  const ms = parseDateOnly(endDate) - parseDateOnly(startDate);
+  return Math.round(ms / (24 * 60 * 60 * 1000));
+}
+
+/**
+ * Convert HH:MM to minutes from midnight.
+ * @param {string} time
+ * @returns {number|null}
+ */
+function timeToMinutes(time) {
+  const hhmm = toHHMM(time);
+  if (!hhmm) return null;
+  const [h, m] = hhmm.split(':').map(Number);
+  return h * 60 + m;
+}
+
+/**
+ * Convert minutes from midnight to HH:MM (rounded, clamped 00:00–23:59).
+ * @param {number} totalMinutes
+ * @returns {string}
+ */
+function minutesToHHMM(totalMinutes) {
+  let mins = Math.round(totalMinutes);
+  // Keep within a single day for Maghrib
+  mins = ((mins % (24 * 60)) + (24 * 60)) % (24 * 60);
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+/**
+ * Get Maghrib (sunset) for a city on a given date.
+ * Linearly interpolates between the previous and next schedule anchors.
+ * Exact anchor dates use the schedule time as-is.
  * @param {string} city
  * @param {string|Date} [date] - YYYY-MM-DD; defaults to city-local today
- * @returns {{ date: string, sunsetTime: string, city: string, timezone: string }|null}
+ * @returns {{ date: string, sunsetTime: string, city: string, timezone: string, scheduleFrom?: string, scheduleTo?: string, interpolated?: boolean }|null}
  */
 function getMaghribForCity(city, date = null) {
   const schedule = getCitySchedule(city);
@@ -100,33 +148,96 @@ function getMaghribForCity(city, date = null) {
 
   const canonicalCity = normalizeCityName(city);
   const targetDate = toDateOnly(date) || getDateInTimezone(schedule.timezone);
+  const entries = schedule.entries;
 
-  // Entries are chronological; pick latest date <= targetDate
-  let selected = null;
-  for (const entry of schedule.entries) {
-    if (entry.date <= targetDate) {
-      selected = entry;
+  let prevIndex = -1;
+  for (let i = 0; i < entries.length; i++) {
+    if (entries[i].date <= targetDate) {
+      prevIndex = i;
     } else {
       break;
     }
   }
 
-  if (!selected) {
+  // Before first schedule row
+  if (prevIndex < 0) {
     return null;
   }
+
+  const prev = entries[prevIndex];
+  const prevTime = toHHMM(prev.sunsetTime);
+
+  // Exact anchor day — no interpolation
+  if (prev.date === targetDate) {
+    return {
+      city: canonicalCity,
+      timezone: schedule.timezone,
+      date: targetDate,
+      sunsetTime: prevTime,
+      scheduleFrom: prev.date,
+      scheduleTo: prev.date,
+      interpolated: false
+    };
+  }
+
+  // After last schedule row — hold last known time
+  if (prevIndex >= entries.length - 1) {
+    return {
+      city: canonicalCity,
+      timezone: schedule.timezone,
+      date: targetDate,
+      sunsetTime: prevTime,
+      scheduleFrom: prev.date,
+      scheduleTo: prev.date,
+      interpolated: false
+    };
+  }
+
+  const next = entries[prevIndex + 1];
+  const nextTime = toHHMM(next.sunsetTime);
+  const spanDays = daysBetween(prev.date, next.date);
+
+  if (spanDays <= 0) {
+    return {
+      city: canonicalCity,
+      timezone: schedule.timezone,
+      date: targetDate,
+      sunsetTime: prevTime,
+      scheduleFrom: prev.date,
+      scheduleTo: next.date,
+      interpolated: false
+    };
+  }
+
+  const elapsedDays = daysBetween(prev.date, targetDate);
+  const prevMins = timeToMinutes(prevTime);
+  const nextMins = timeToMinutes(nextTime);
+
+  if (prevMins == null || nextMins == null) {
+    return null;
+  }
+
+  // Linear interpolation: start + (elapsed/span) * (end - start)
+  // Negative (end - start) when Maghrib is getting earlier (e.g. 19:15 → 19:07)
+  const interpolatedMins = prevMins + (elapsedDays / spanDays) * (nextMins - prevMins);
+  const sunsetTime = minutesToHHMM(interpolatedMins);
 
   return {
     city: canonicalCity,
     timezone: schedule.timezone,
-    date: selected.date,
-    sunsetTime: toHHMM(selected.sunsetTime)
+    date: targetDate,
+    sunsetTime,
+    scheduleFrom: prev.date,
+    scheduleTo: next.date,
+    interpolated: true
   };
 }
 
 /**
  * Upsert Maghrib prayer time for one masjid from its city schedule.
+ * Writes Maghrib for city-local "today" so it always wins over older imam-set Maghrib rows.
  * @param {Object} masjid - Masjid instance (needs id, city, created_by)
- * @param {string} [date] - optional YYYY-MM-DD override
+ * @param {string} [date] - optional YYYY-MM-DD override (city-local today if omitted)
  * @returns {Promise<{ updated: boolean, skipped: boolean, prayerTime?: Object, maghrib?: Object, reason?: string }>}
  */
 async function syncMaghribForMasjid(masjid, date = null) {
@@ -134,20 +245,28 @@ async function syncMaghribForMasjid(masjid, date = null) {
     return { updated: false, skipped: true, reason: 'no_city' };
   }
 
-  const maghrib = getMaghribForCity(masjid.city, date);
+  const today = toDateOnly(date) || getTodayForCity(masjid.city);
+  const maghrib = getMaghribForCity(masjid.city, today);
   if (!maghrib) {
     return { updated: false, skipped: true, reason: 'no_schedule' };
   }
+
+  if (!masjid.created_by) {
+    logger.warn(`Maghrib sync skipped for masjid ${masjid.id}: missing created_by (required for updated_by)`);
+    return { updated: false, skipped: true, reason: 'no_created_by', maghrib };
+  }
+
+  // Use today as effective_date so this row is the latest for getTodaysPrayerTimes
+  const effectiveDate = today;
+  const timeValue = maghrib.sunsetTime;
 
   const existing = await PrayerTime.findOne({
     where: {
       masjid_id: masjid.id,
       prayer_name: 'Maghrib',
-      effective_date: maghrib.date
+      effective_date: effectiveDate
     }
   });
-
-  const timeValue = maghrib.sunsetTime;
 
   if (existing) {
     const current = toHHMM(existing.prayer_time);
@@ -160,7 +279,7 @@ async function syncMaghribForMasjid(masjid, date = null) {
     existing.notify_users = false;
     await existing.save();
 
-    logger.info(`Auto-updated Maghrib for masjid ${masjid.id} (${masjid.city}) to ${timeValue} effective ${maghrib.date}`);
+    logger.info(`Auto-updated Maghrib for masjid ${masjid.id} (${masjid.city}) to ${timeValue} effective ${effectiveDate} (schedule ${maghrib.date})`);
     return { updated: true, skipped: false, prayerTime: existing, maghrib };
   }
 
@@ -168,12 +287,12 @@ async function syncMaghribForMasjid(masjid, date = null) {
     masjid_id: masjid.id,
     prayer_name: 'Maghrib',
     prayer_time: timeValue,
-    effective_date: maghrib.date,
+    effective_date: effectiveDate,
     updated_by: masjid.created_by,
     notify_users: false
   });
 
-  logger.info(`Auto-created Maghrib for masjid ${masjid.id} (${masjid.city}) as ${timeValue} effective ${maghrib.date}`);
+  logger.info(`Auto-created Maghrib for masjid ${masjid.id} (${masjid.city}) as ${timeValue} effective ${effectiveDate} (schedule ${maghrib.date})`);
   return { updated: true, skipped: false, prayerTime: created, maghrib };
 }
 
@@ -238,7 +357,8 @@ async function syncMaghribForAllScheduledCities() {
 function applyScheduledMaghribToPrayerTimes(masjid, prayerTimes, date = null) {
   if (!masjid?.city) return prayerTimes;
 
-  const maghrib = getMaghribForCity(masjid.city, date);
+  const today = toDateOnly(date) || getTodayForCity(masjid.city);
+  const maghrib = getMaghribForCity(masjid.city, today);
   if (!maghrib) return prayerTimes;
 
   const list = prayerTimes.map(pt => (typeof pt.toJSON === 'function' ? pt.toJSON() : { ...pt }));
@@ -247,11 +367,12 @@ function applyScheduledMaghribToPrayerTimes(masjid, prayerTimes, date = null) {
     masjid_id: masjid.id,
     prayer_name: 'Maghrib',
     prayer_time: maghrib.sunsetTime,
-    effective_date: maghrib.date,
+    effective_date: today,
     updated_by: masjid.created_by || null,
     notify_users: false,
     auto_scheduled: true,
-    schedule_city: maghrib.city
+    schedule_city: maghrib.city,
+    schedule_effective_from: maghrib.date
   };
 
   const idx = list.findIndex(pt => pt.prayer_name === 'Maghrib');
@@ -259,9 +380,10 @@ function applyScheduledMaghribToPrayerTimes(masjid, prayerTimes, date = null) {
     list[idx] = {
       ...list[idx],
       prayer_time: maghrib.sunsetTime,
-      effective_date: maghrib.date,
+      effective_date: today,
       auto_scheduled: true,
-      schedule_city: maghrib.city
+      schedule_city: maghrib.city,
+      schedule_effective_from: maghrib.date
     };
   } else {
     list.push(autoMaghrib);

@@ -1,6 +1,7 @@
 /**
  * City Maghrib (sunset) schedules.
- * Maghrib is taken from the latest entry with date <= target date.
+ * Between schedule dates, Maghrib is linearly interpolated by day
+ * (e.g. Aug 1 19:15 → Aug 15 19:07 ⇒ Aug 14 ≈ 19:08).
  * Add more cities by appending to CITY_SUNSET_SCHEDULES.
  */
 const CITY_SUNSET_SCHEDULES = {
@@ -38,19 +39,28 @@ const CITY_SUNSET_SCHEDULES = {
 };
 
 /**
- * Normalize city name for lookup (case-insensitive, trimmed).
+ * Normalize city name for lookup (case-insensitive).
+ * Matches exact "Karachi" and values like "Karachi, Pakistan" / "North Karachi".
  * @param {string} city
  * @returns {string|null}
  */
 function normalizeCityName(city) {
   if (!city || typeof city !== 'string') return null;
-  const trimmed = city.trim();
+  const trimmed = city.trim().replace(/\s+/g, ' ');
   if (!trimmed) return null;
 
-  const match = Object.keys(CITY_SUNSET_SCHEDULES).find(
-    key => key.toLowerCase() === trimmed.toLowerCase()
-  );
-  return match || null;
+  const lower = trimmed.toLowerCase();
+  const keys = Object.keys(CITY_SUNSET_SCHEDULES);
+
+  const exact = keys.find(key => key.toLowerCase() === lower);
+  if (exact) return exact;
+
+  // Containment match against known schedule cities only
+  const contained = keys.find(key => {
+    const k = key.toLowerCase();
+    return lower.includes(k) || k.includes(lower);
+  });
+  return contained || null;
 }
 
 /**
