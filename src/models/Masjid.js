@@ -54,6 +54,11 @@ module.exports = (sequelize) => {
       type: DataTypes.BOOLEAN,
       defaultValue: true
     },
+    ask_imam_enabled: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: true
+    },
     created_by: {
       type: DataTypes.UUID,
       allowNull: false,

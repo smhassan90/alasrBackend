@@ -177,7 +177,8 @@ exports.createMasjid = async (req, res) => {
       country,
       postal_code,
       contact_email,
-      contact_phone
+      contact_phone,
+      ask_imam_enabled
     } = req.body;
 
     // Create masjid
@@ -191,6 +192,7 @@ exports.createMasjid = async (req, res) => {
       postal_code,
       contact_email,
       contact_phone,
+      ask_imam_enabled: ask_imam_enabled !== undefined ? ask_imam_enabled : true,
       created_by: req.userId
     }, { transaction });
 
@@ -239,7 +241,8 @@ exports.updateMasjid = async (req, res) => {
       postal_code,
       contact_email,
       contact_phone,
-      is_active
+      is_active,
+      ask_imam_enabled
     } = req.body;
 
     const masjid = await Masjid.findByPk(id);
@@ -258,6 +261,7 @@ exports.updateMasjid = async (req, res) => {
     if (contact_email !== undefined) masjid.contact_email = contact_email;
     if (contact_phone !== undefined) masjid.contact_phone = contact_phone;
     if (is_active !== undefined) masjid.is_active = is_active;
+    if (ask_imam_enabled !== undefined) masjid.ask_imam_enabled = ask_imam_enabled;
 
     await masjid.save();
 

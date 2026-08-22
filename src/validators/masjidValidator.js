@@ -43,7 +43,12 @@ exports.createMasjidValidator = [
   body('contact_phone')
     .optional()
     .trim()
-    .isLength({ max: 20 }).withMessage('Contact phone must not exceed 20 characters')
+    .isLength({ max: 20 }).withMessage('Contact phone must not exceed 20 characters'),
+
+  body('ask_imam_enabled')
+    .optional()
+    .isBoolean().withMessage('ask_imam_enabled must be a boolean')
+    .toBoolean()
 ];
 
 exports.updateMasjidValidator = [
@@ -98,7 +103,12 @@ exports.updateMasjidValidator = [
   
   body('is_active')
     .optional()
-    .isBoolean().withMessage('is_active must be a boolean')
+    .isBoolean().withMessage('is_active must be a boolean'),
+
+  body('ask_imam_enabled')
+    .optional()
+    .isBoolean().withMessage('ask_imam_enabled must be a boolean')
+    .toBoolean()
 ];
 
 exports.masjidIdValidator = [

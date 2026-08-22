@@ -263,6 +263,10 @@ exports.setQuestions = async (req, res) => {
       return responseHelper.notFound(res, 'Masjid not found');
     }
 
+    if (masjid.ask_imam_enabled === false) {
+      return responseHelper.error(res, 'Ask Imam is not available for this masjid', 403);
+    }
+
     // Validate device ID is provided
     if (!deviceId || !platform) {
       return responseHelper.error(res, 'Device ID and platform are required', 400);
