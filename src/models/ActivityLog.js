@@ -62,6 +62,9 @@ module.exports = (sequelize) => {
   }, {
     tableName: 'activity_logs',
     timestamps: true,
+    underscored: true,
+    createdAt: 'created_at',
+    updatedAt: 'updated_at',
     indexes: [
       {
         fields: ['masjid_id', 'created_at'],

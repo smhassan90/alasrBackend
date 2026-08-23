@@ -8,6 +8,25 @@ const activityLogService = require('../services/activityLogService');
 const { Op } = require('sequelize');
 
 const PRAYER_ORDER = "FIELD(prayer_name, 'Fajr', 'Dhuhr', 'Jummah', 'Asr', 'Maghrib', 'Isha')";
+
+function toClock(value) {
+  if (value == null || value === '') {
+    return '';
+  }
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString().slice(11, 16);
+  }
+  const match = String(value).match(/(\d{1,2}):(\d{2})/);
+  if (!match) {
+    return String(value).slice(0, 5);
+  }
+  return `${String(match[1]).padStart(2, '0')}:${match[2]}`;
+}
+
+function timesDiffer(left, right) {
+  return toClock(left) !== toClock(right);
+}
+
 const PUBLIC_RANGE_DAYS = 62;
 const PUBLIC_ROW_CAP = 400;
 const IMAM_ROW_CAP = 2000;
@@ -254,7 +273,7 @@ exports.createPrayerTime = async (req, res) => {
     if (existingPrayerTime) {
       // Check if prayer time actually changed
       const oldTime = existingPrayerTime.prayer_time;
-      timeChanged = oldTime !== prayerTime;
+      timeChanged = timesDiffer(oldTime, prayerTime);
       
       // Update existing
       existingPrayerTime.prayer_time = prayerTime;
@@ -340,7 +359,7 @@ exports.updatePrayerTime = async (req, res) => {
     let timeChanged = false;
 
     if (prayerTime) {
-      timeChanged = oldTime !== prayerTime;
+      timeChanged = timesDiffer(oldTime, prayerTime);
       prayerTimeRecord.prayer_time = prayerTime;
     }
     if (effectiveDate) prayerTimeRecord.effective_date = effectiveDate;
@@ -434,7 +453,7 @@ exports.bulkUpdatePrayerTimes = async (req, res) => {
     const changedPrayers = [];
     const upsertRows = incoming.map(pt => {
       const existing = existingByName.get(pt.prayerName);
-      if (!existing || existing.prayer_time !== pt.prayerTime) {
+      if (!existing || timesDiffer(existing.prayer_time, pt.prayerTime)) {
         hasChanges = true;
         changedPrayers.push({ prayerName: pt.prayerName, prayerTime: pt.prayerTime });
       }

@@ -1,3 +1,4 @@
+const { randomUUID } = require('crypto');
 const { Op } = require('sequelize');
 const { ActivityLog, User, Masjid, sequelize } = require('../models');
 const logger = require('../utils/logger');
@@ -16,10 +17,17 @@ function retentionCutoff() {
 }
 
 function formatClock(time) {
-  if (!time) {
+  if (time == null || time === '') {
     return '';
   }
-  return String(time).slice(0, 5);
+  if (time instanceof Date && !Number.isNaN(time.getTime())) {
+    return time.toISOString().slice(11, 16);
+  }
+  const match = String(time).match(/(\d{1,2}):(\d{2})/);
+  if (!match) {
+    return String(time).slice(0, 5);
+  }
+  return `${String(match[1]).padStart(2, '0')}:${match[2]}`;
 }
 
 function emptyResult(page, limit) {
@@ -33,21 +41,17 @@ function emptyResult(page, limit) {
   };
 }
 
-async function pruneOldLogs() {
+function parseMetadata(value) {
+  if (!value) {
+    return null;
+  }
+  if (typeof value === 'object') {
+    return value;
+  }
   try {
-    await ensureActivityLogsTable(sequelize);
-    const deleted = await ActivityLog.destroy({
-      where: {
-        createdAt: { [Op.lt]: retentionCutoff() }
-      }
-    });
-    if (deleted > 0) {
-      logger.info(`Pruned ${deleted} activity logs older than ${RETENTION_DAYS} days`);
-    }
-    return deleted;
+    return JSON.parse(value);
   } catch (error) {
-    logger.error(`Failed to prune activity logs: ${error.message}`);
-    return 0;
+    return value;
   }
 }
 
@@ -59,32 +63,92 @@ function serializeLog(log) {
     user_id: json.user_id,
     action: json.action,
     message: json.message,
-    metadata: json.metadata || null,
+    metadata: parseMetadata(json.metadata),
     created_at: json.created_at || json.createdAt,
     user: json.user
       ? { id: json.user.id, name: json.user.name }
-      : null,
+      : json.user_name
+        ? { id: json.user_id, name: json.user_name }
+        : null,
     masjid: json.masjid
       ? { id: json.masjid.id, name: json.masjid.name }
-      : null
+      : json.masjid_name
+        ? { id: json.masjid_id, name: json.masjid_name }
+        : null
   };
+}
+
+async function insertLogRaw({ masjidId, userId, action, message, metadata }) {
+  const id = randomUUID();
+  const meta = metadata == null ? null : JSON.stringify(metadata);
+  try {
+    await sequelize.query(
+      `INSERT INTO activity_logs
+        (id, masjid_id, user_id, action, message, metadata, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+      {
+        replacements: [id, masjidId, userId || null, action, String(message).slice(0, 500), meta]
+      }
+    );
+    return id;
+  } catch (error) {
+    if (userId) {
+      logger.error(`Activity log insert failed (${error.message}); retrying without user_id`);
+      await sequelize.query(
+        `INSERT INTO activity_logs
+          (id, masjid_id, user_id, action, message, metadata, created_at, updated_at)
+         VALUES (?, ?, NULL, ?, ?, ?, NOW(), NOW())`,
+        {
+          replacements: [id, masjidId, action, String(message).slice(0, 500), meta]
+        }
+      );
+      return id;
+    }
+    throw error;
+  }
+}
+
+async function pruneOldLogs() {
+  try {
+    await ensureActivityLogsTable(sequelize);
+    const [result] = await sequelize.query(
+      'DELETE FROM activity_logs WHERE created_at < ?',
+      { replacements: [retentionCutoff()] }
+    );
+    const deleted = result?.affectedRows || 0;
+    if (deleted > 0) {
+      logger.info(`Pruned ${deleted} activity logs older than ${RETENTION_DAYS} days`);
+    }
+    return deleted;
+  } catch (error) {
+    logger.error(`Failed to prune activity logs: ${error.message}`);
+    return 0;
+  }
 }
 
 async function logActivity({ masjidId, userId, action, message, metadata }) {
   try {
     if (!masjidId || !action || !message) {
+      logger.error('Skipped activity log: missing masjidId, action, or message');
       return null;
     }
     await ensureActivityLogsTable(sequelize);
-    const log = await ActivityLog.create({
-      masjid_id: masjidId,
-      user_id: userId || null,
-      action,
-      message: String(message).slice(0, 500),
-      metadata: metadata || null
-    });
-    pruneOldLogs().catch(() => {});
-    return log;
+    try {
+      const log = await ActivityLog.create({
+        masjid_id: masjidId,
+        user_id: userId || null,
+        action,
+        message: String(message).slice(0, 500),
+        metadata: metadata || null
+      });
+      pruneOldLogs().catch(() => {});
+      return log;
+    } catch (error) {
+      logger.error(`Sequelize activity log write failed: ${error.message}`);
+      await insertLogRaw({ masjidId, userId, action, message, metadata });
+      pruneOldLogs().catch(() => {});
+      return { id: true };
+    }
   } catch (error) {
     logger.error(`Failed to write activity log: ${error.message}`);
     return null;
@@ -126,6 +190,45 @@ function logQuestionAnswered({ masjidId, userId, actorName, questionTitle }) {
   });
 }
 
+async function listLogsRaw({ masjidId, parsedPage, parsedLimit }) {
+  const offset = (parsedPage - 1) * parsedLimit;
+  const cutoff = retentionCutoff();
+  const replacements = masjidId
+    ? [cutoff, masjidId, parsedLimit, offset]
+    : [cutoff, parsedLimit, offset];
+  const masjidFilter = masjidId ? 'AND al.masjid_id = ?' : '';
+
+  const [rows] = await sequelize.query(
+    `SELECT al.*, u.name AS user_name, m.name AS masjid_name
+     FROM activity_logs al
+     LEFT JOIN users u ON u.id = al.user_id
+     LEFT JOIN masajids m ON m.id = al.masjid_id
+     WHERE al.created_at >= ?
+     ${masjidFilter}
+     ORDER BY al.created_at DESC
+     LIMIT ? OFFSET ?`,
+    { replacements }
+  );
+
+  const countReplacements = masjidId ? [cutoff, masjidId] : [cutoff];
+  const [countRows] = await sequelize.query(
+    `SELECT COUNT(*) AS total
+     FROM activity_logs
+     WHERE created_at >= ?
+     ${masjidId ? 'AND masjid_id = ?' : ''}`,
+    { replacements: countReplacements }
+  );
+
+  return {
+    logs: (rows || []).map(serializeLog),
+    pagination: {
+      page: parsedPage,
+      limit: parsedLimit,
+      totalItems: Number(countRows?.[0]?.total || 0)
+    }
+  };
+}
+
 async function listLogs({ masjidId, page = 1, limit = 50 }) {
   const parsedPage = Math.max(parseInt(page, 10) || 1, 1);
   const parsedLimit = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 100);
@@ -138,14 +241,14 @@ async function listLogs({ masjidId, page = 1, limit = 50 }) {
   }
 
   try {
-    await pruneOldLogs();
+    return await listLogsRaw({ masjidId, parsedPage, parsedLimit });
   } catch (error) {
-    logger.error(`Could not prune activity logs: ${error.message}`);
+    logger.error(`Raw activity log query failed, trying Sequelize: ${error.message}`);
   }
 
   const offset = (parsedPage - 1) * parsedLimit;
   const where = {
-    createdAt: { [Op.gte]: retentionCutoff() }
+    created_at: { [Op.gte]: retentionCutoff() }
   };
   if (masjidId) {
     where.masjid_id = masjidId;
@@ -153,7 +256,7 @@ async function listLogs({ masjidId, page = 1, limit = 50 }) {
 
   const query = {
     where,
-    order: [['createdAt', 'DESC']],
+    order: [['created_at', 'DESC']],
     limit: parsedLimit,
     offset
   };
