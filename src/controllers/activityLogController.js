@@ -14,7 +14,7 @@ exports.getMasjidLogs = async (req, res) => {
     return responseHelper.paginated(res, result.logs, result.pagination, 'Activity logs retrieved');
   } catch (error) {
     logger.error(`Get masjid activity logs error: ${error.message}`);
-    return responseHelper.error(res, 'Failed to load activity logs', 500);
+    return responseHelper.error(res, 'Failed to load activity logs', 500, error.message);
   }
 };
 
@@ -29,6 +29,6 @@ exports.getAllLogs = async (req, res) => {
     return responseHelper.paginated(res, result.logs, result.pagination, 'Activity logs retrieved');
   } catch (error) {
     logger.error(`Get all activity logs error: ${error.message}`);
-    return responseHelper.error(res, 'Failed to load activity logs', 500);
+    return responseHelper.error(res, 'Failed to load activity logs', 500, error.message);
   }
 };

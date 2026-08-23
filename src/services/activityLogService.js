@@ -22,6 +22,17 @@ function formatClock(time) {
   return String(time).slice(0, 5);
 }
 
+function emptyResult(page, limit) {
+  return {
+    logs: [],
+    pagination: {
+      page,
+      limit,
+      totalItems: 0
+    }
+  };
+}
+
 async function pruneOldLogs() {
   try {
     await ensureActivityLogsTable(sequelize);
@@ -116,11 +127,22 @@ function logQuestionAnswered({ masjidId, userId, actorName, questionTitle }) {
 }
 
 async function listLogs({ masjidId, page = 1, limit = 50 }) {
-  await ensureActivityLogsTable(sequelize);
-  await pruneOldLogs();
-
   const parsedPage = Math.max(parseInt(page, 10) || 1, 1);
   const parsedLimit = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 100);
+
+  try {
+    await ensureActivityLogsTable(sequelize);
+  } catch (error) {
+    logger.error(`Could not ensure activity_logs table: ${error.message}`);
+    return emptyResult(parsedPage, parsedLimit);
+  }
+
+  try {
+    await pruneOldLogs();
+  } catch (error) {
+    logger.error(`Could not prune activity logs: ${error.message}`);
+  }
+
   const offset = (parsedPage - 1) * parsedLimit;
   const where = {
     createdAt: { [Op.gte]: retentionCutoff() }
@@ -129,31 +151,38 @@ async function listLogs({ masjidId, page = 1, limit = 50 }) {
     where.masjid_id = masjidId;
   }
 
-  const include = [
-    { model: User, as: 'user', attributes: ['id', 'name'], required: false },
-    { model: Masjid, as: 'masjid', attributes: ['id', 'name'], required: false }
-  ];
+  const query = {
+    where,
+    order: [['createdAt', 'DESC']],
+    limit: parsedLimit,
+    offset
+  };
 
   let rows;
   try {
     rows = await ActivityLog.findAll({
-      where,
-      include,
-      order: [['createdAt', 'DESC']],
-      limit: parsedLimit,
-      offset
+      ...query,
+      include: [
+        { model: User, as: 'user', attributes: ['id', 'name'], required: false },
+        { model: Masjid, as: 'masjid', attributes: ['id', 'name'], required: false }
+      ]
     });
   } catch (error) {
     logger.error(`Activity log include query failed, retrying without include: ${error.message}`);
-    rows = await ActivityLog.findAll({
-      where,
-      order: [['createdAt', 'DESC']],
-      limit: parsedLimit,
-      offset
-    });
+    try {
+      rows = await ActivityLog.findAll(query);
+    } catch (retryError) {
+      logger.error(`Activity log query failed: ${retryError.message}`);
+      return emptyResult(parsedPage, parsedLimit);
+    }
   }
 
-  const count = await ActivityLog.count({ where });
+  let count = rows.length;
+  try {
+    count = await ActivityLog.count({ where });
+  } catch (error) {
+    logger.error(`Activity log count failed: ${error.message}`);
+  }
 
   return {
     logs: rows.map(serializeLog),
@@ -174,7 +203,6 @@ module.exports = {
   logQuestionAnswered,
   listLogs,
   pruneOldLogs,
-  pruneOldLogs: pruneOldLogs,
   getLogs: listLogs,
   deleteOldLogs: pruneOldLogs
 };

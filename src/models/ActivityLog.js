@@ -32,8 +32,32 @@ module.exports = (sequelize) => {
       allowNull: false
     },
     metadata: {
-      type: DataTypes.JSON,
-      allowNull: true
+      type: DataTypes.TEXT,
+      allowNull: true,
+      get() {
+        const raw = this.getDataValue('metadata');
+        if (!raw) {
+          return null;
+        }
+        if (typeof raw === 'object') {
+          return raw;
+        }
+        try {
+          return JSON.parse(raw);
+        } catch (error) {
+          return raw;
+        }
+      },
+      set(value) {
+        if (value == null) {
+          this.setDataValue('metadata', null);
+          return;
+        }
+        this.setDataValue(
+          'metadata',
+          typeof value === 'string' ? value : JSON.stringify(value)
+        );
+      }
     }
   }, {
     tableName: 'activity_logs',

@@ -49,7 +49,7 @@ module.exports = {
         allowNull: false
       },
       metadata: {
-        type: Sequelize.JSON,
+        type: Sequelize.TEXT,
         allowNull: true
       },
       created_at: {
