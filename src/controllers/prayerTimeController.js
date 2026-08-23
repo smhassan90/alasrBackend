@@ -288,13 +288,13 @@ exports.createPrayerTime = async (req, res) => {
       sendPrayerTimeNotifications(masjid, prayerTimeRecord, req.userId).catch(err => {
         logger.error(`Failed to send prayer time notifications: ${err.message}`);
       });
-      activityLogService.logPrayerTimeUpdate({
+      await activityLogService.logPrayerTimeUpdate({
         masjidId,
         userId: req.userId,
         actorName: req.user?.name,
         prayerName,
         prayerTime
-      }).catch(() => {});
+      });
     }
 
     return responseHelper.success(res, prayerTimeRecord, 'Prayer time saved successfully', wasUpdate ? 200 : 201);
@@ -358,13 +358,13 @@ exports.updatePrayerTime = async (req, res) => {
       sendPrayerTimeNotifications(prayerTimeRecord.masjid, prayerTimeRecord, req.userId).catch(err => {
         logger.error(`Failed to send prayer time notifications: ${err.message}`);
       });
-      activityLogService.logPrayerTimeUpdate({
+      await activityLogService.logPrayerTimeUpdate({
         masjidId: prayerTimeRecord.masjid_id,
         userId: req.userId,
         actorName: req.user?.name,
         prayerName: prayerTimeRecord.prayer_name,
         prayerTime: prayerTimeRecord.prayer_time
-      }).catch(() => {});
+      });
     }
 
     return responseHelper.success(res, prayerTimeRecord, 'Prayer time updated successfully');
@@ -489,15 +489,17 @@ exports.bulkUpdatePrayerTimes = async (req, res) => {
       sendPrayerTimeBulkNotifications(masjid, createdPrayerTimes, req.userId).catch(err => {
         logger.error(`Failed to send bulk prayer time notifications: ${err.message}`);
       });
-      changedPrayers.forEach((change) => {
-        activityLogService.logPrayerTimeUpdate({
-          masjidId,
-          userId: req.userId,
-          actorName: req.user?.name,
-          prayerName: change.prayerName,
-          prayerTime: change.prayerTime
-        }).catch(() => {});
-      });
+      await Promise.all(
+        changedPrayers.map((change) =>
+          activityLogService.logPrayerTimeUpdate({
+            masjidId,
+            userId: req.userId,
+            actorName: req.user?.name,
+            prayerName: change.prayerName,
+            prayerTime: change.prayerTime
+          })
+        )
+      );
     }
 
     return responseHelper.success(res, createdPrayerTimes, 'Prayer times updated successfully');

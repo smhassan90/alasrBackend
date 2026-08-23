@@ -127,12 +127,12 @@ exports.createEvent = async (req, res) => {
 
     logger.info(`Event created for masjid ${masjidId} by ${req.userId}`);
 
-    activityLogService.logEventCreated({
+    await activityLogService.logEventCreated({
       masjidId,
       userId: req.userId,
       actorName: req.user?.name || eventWithCreator?.creator?.name,
       eventName: name
-    }).catch(() => {});
+    });
 
     return responseHelper.success(res, eventWithCreator, 'Event created successfully', 201);
   } catch (error) {

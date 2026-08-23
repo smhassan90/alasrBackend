@@ -27,7 +27,7 @@ async function pruneOldLogs() {
     await ensureActivityLogsTable(sequelize);
     const deleted = await ActivityLog.destroy({
       where: {
-        created_at: { [Op.lt]: retentionCutoff() }
+        createdAt: { [Op.lt]: retentionCutoff() }
       }
     });
     if (deleted > 0) {
@@ -49,7 +49,7 @@ function serializeLog(log) {
     action: json.action,
     message: json.message,
     metadata: json.metadata || null,
-    created_at: json.created_at,
+    created_at: json.created_at || json.createdAt,
     user: json.user
       ? { id: json.user.id, name: json.user.name }
       : null,
@@ -123,22 +123,37 @@ async function listLogs({ masjidId, page = 1, limit = 50 }) {
   const parsedLimit = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 100);
   const offset = (parsedPage - 1) * parsedLimit;
   const where = {
-    created_at: { [Op.gte]: retentionCutoff() }
+    createdAt: { [Op.gte]: retentionCutoff() }
   };
   if (masjidId) {
     where.masjid_id = masjidId;
   }
 
-  const { count, rows } = await ActivityLog.findAndCountAll({
-    where,
-    include: [
-      { model: User, as: 'user', attributes: ['id', 'name'], required: false },
-      { model: Masjid, as: 'masjid', attributes: ['id', 'name'], required: false }
-    ],
-    order: [['created_at', 'DESC']],
-    limit: parsedLimit,
-    offset
-  });
+  const include = [
+    { model: User, as: 'user', attributes: ['id', 'name'], required: false },
+    { model: Masjid, as: 'masjid', attributes: ['id', 'name'], required: false }
+  ];
+
+  let rows;
+  try {
+    rows = await ActivityLog.findAll({
+      where,
+      include,
+      order: [['createdAt', 'DESC']],
+      limit: parsedLimit,
+      offset
+    });
+  } catch (error) {
+    logger.error(`Activity log include query failed, retrying without include: ${error.message}`);
+    rows = await ActivityLog.findAll({
+      where,
+      order: [['createdAt', 'DESC']],
+      limit: parsedLimit,
+      offset
+    });
+  }
+
+  const count = await ActivityLog.count({ where });
 
   return {
     logs: rows.map(serializeLog),
@@ -159,6 +174,7 @@ module.exports = {
   logQuestionAnswered,
   listLogs,
   pruneOldLogs,
+  pruneOldLogs: pruneOldLogs,
   getLogs: listLogs,
   deleteOldLogs: pruneOldLogs
 };

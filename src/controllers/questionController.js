@@ -364,12 +364,12 @@ exports.replyToQuestion = async (req, res) => {
 
     logger.info(`Question ${id} replied by ${req.userId} in ${Date.now() - startedAt}ms`);
 
-    activityLogService.logQuestionAnswered({
+    await activityLogService.logQuestionAnswered({
       masjidId: question.masjid_id,
       userId: req.userId,
       actorName: replier.name,
       questionTitle: question.title
-    }).catch(() => {});
+    });
 
     // Notify after responding so email/FCM never block the API response
     const masjid = question.masjid || { id: question.masjid_id, name: 'Masjid' };
