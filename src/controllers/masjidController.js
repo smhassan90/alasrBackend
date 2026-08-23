@@ -2,6 +2,7 @@ const { Masjid, UserMasjid, User, Question, Event, MasjidSubscription, UserSetti
 const responseHelper = require('../utils/responseHelper');
 const logger = require('../utils/logger');
 const { Op } = require('sequelize');
+const { ensureAskImamEnabledColumn } = require('../utils/ensureAskImamColumn');
 
 /**
  * Get all masajids
@@ -11,6 +12,7 @@ const { Op } = require('sequelize');
  */
 exports.getAllMasajids = async (req, res) => {
   try {
+    await ensureAskImamEnabledColumn(sequelize);
     const { page = 1, search } = req.query;
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 100);
     const offset = (page - 1) * limit;
@@ -137,6 +139,7 @@ exports.getAllMasajids = async (req, res) => {
  */
 exports.getMasjidById = async (req, res) => {
   try {
+    await ensureAskImamEnabledColumn(sequelize);
     const { id } = req.params;
 
     const masjid = await Masjid.findByPk(id, {
@@ -168,6 +171,7 @@ exports.createMasjid = async (req, res) => {
   const transaction = await sequelize.transaction();
   
   try {
+    await ensureAskImamEnabledColumn(sequelize);
     const {
       name,
       location,
