@@ -23,6 +23,10 @@ module.exports = (sequelize) => {
       type: DataTypes.TEXT,
       allowNull: true
     },
+    area: {
+      type: DataTypes.STRING(100),
+      allowNull: true
+    },
     city: {
       type: DataTypes.STRING(100),
       allowNull: true
@@ -58,6 +62,14 @@ module.exports = (sequelize) => {
       type: DataTypes.BOOLEAN,
       allowNull: false,
       defaultValue: true
+    },
+    asr_fiqh: {
+      type: DataTypes.STRING(20),
+      allowNull: false,
+      defaultValue: 'hanafi',
+      validate: {
+        isIn: [['hanafi', 'shafai']]
+      }
     },
     created_by: {
       type: DataTypes.UUID,
@@ -130,6 +142,11 @@ module.exports = (sequelize) => {
     Masjid.hasMany(models.MasjidSubscription, {
       foreignKey: 'masjid_id',
       as: 'subscriptions'
+    });
+
+    Masjid.hasMany(models.ActivityLog, {
+      foreignKey: 'masjid_id',
+      as: 'activityLogs'
     });
   };
 

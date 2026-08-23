@@ -1,9 +1,11 @@
-const { UserFavorite, Masjid } = require('../models');
+const { UserFavorite, Masjid, sequelize } = require('../models');
 const responseHelper = require('../utils/responseHelper');
 const logger = require('../utils/logger');
 const { Op } = require('sequelize');
 const { generateDeviceId } = require('../utils/deviceId');
 const { getMaxFavoritesLimit } = require('../utils/appConfigCache');
+const { ensureAsrFiqhColumn } = require('../utils/ensureAsrFiqhColumn');
+const { ensureAreaColumn } = require('../utils/ensureAreaColumn');
 
 /**
  * Get app configuration (public endpoint)
@@ -30,6 +32,8 @@ exports.getAppConfig = async (req, res) => {
  */
 exports.getFavorites = async (req, res) => {
   try {
+    await ensureAsrFiqhColumn(sequelize);
+    await ensureAreaColumn(sequelize);
     const userId = req.userId || null;
     const { deviceId, platform, appVersion } = req.query;
 
@@ -55,7 +59,7 @@ exports.getFavorites = async (req, res) => {
         {
           model: Masjid,
           as: 'masjid',
-          attributes: ['id', 'name', 'address', 'location', 'city', 'state', 'country', 'postal_code', 'contact_email', 'contact_phone', 'is_active']
+          attributes: ['id', 'name', 'address', 'location', 'area', 'city', 'state', 'country', 'postal_code', 'contact_email', 'contact_phone', 'is_active', 'ask_imam_enabled', 'asr_fiqh']
         }
       ],
       order: [['created_at', 'DESC']]

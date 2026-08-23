@@ -3,6 +3,9 @@ const responseHelper = require('../utils/responseHelper');
 const logger = require('../utils/logger');
 const { Op } = require('sequelize');
 const { ensureAskImamEnabledColumn } = require('../utils/ensureAskImamColumn');
+const { ensureAsrFiqhColumn } = require('../utils/ensureAsrFiqhColumn');
+const { ensureAreaColumn } = require('../utils/ensureAreaColumn');
+const { upsertArea } = require('../utils/upsertArea');
 
 /**
  * Get all masajids
@@ -12,7 +15,8 @@ const { ensureAskImamEnabledColumn } = require('../utils/ensureAskImamColumn');
  */
 exports.getAllMasajids = async (req, res) => {
   try {
-    await ensureAskImamEnabledColumn(sequelize);
+    await ensureAsrFiqhColumn(sequelize);
+    await ensureAreaColumn(sequelize);
     const { page = 1, search } = req.query;
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 100);
     const offset = (page - 1) * limit;
@@ -59,6 +63,7 @@ exports.getAllMasajids = async (req, res) => {
       whereClause[Op.or] = [
         { name: { [Op.like]: `%${search}%` } },
         { city: { [Op.like]: `%${search}%` } },
+        { area: { [Op.like]: `%${search}%` } },
         { location: { [Op.like]: `%${search}%` } }
       ];
     }
@@ -84,12 +89,10 @@ exports.getAllMasajids = async (req, res) => {
         limit,
         offset: parseInt(offset, 10) || 0,
         order: [['created_at', 'DESC']],
-        include: [
-          {
-            model: User,
-            as: 'creator',
-            attributes: ['id', 'name', 'email']
-          }
+        attributes: [
+          'id', 'name', 'location', 'address', 'area', 'city', 'state', 'country',
+          'postal_code', 'contact_email', 'contact_phone', 'is_active',
+          'ask_imam_enabled', 'asr_fiqh', 'created_at', 'updated_at'
         ]
       }),
       subscriptionWhere
@@ -122,6 +125,7 @@ exports.getAllMasajids = async (req, res) => {
       : `Masajids retrieved (public access): ${count} total`;
     logger.info(logMessage);
 
+    res.set('Cache-Control', 'public, max-age=120');
     return responseHelper.paginated(res, masajidsWithSubscription, {
       page: parseInt(page),
       limit,
@@ -139,16 +143,15 @@ exports.getAllMasajids = async (req, res) => {
  */
 exports.getMasjidById = async (req, res) => {
   try {
-    await ensureAskImamEnabledColumn(sequelize);
+    await ensureAsrFiqhColumn(sequelize);
+    await ensureAreaColumn(sequelize);
     const { id } = req.params;
 
     const masjid = await Masjid.findByPk(id, {
-      include: [
-        {
-          model: User,
-          as: 'creator',
-          attributes: ['id', 'name', 'email']
-        }
+      attributes: [
+        'id', 'name', 'location', 'address', 'area', 'city', 'state', 'country',
+        'postal_code', 'contact_email', 'contact_phone', 'is_active',
+        'ask_imam_enabled', 'asr_fiqh', 'created_at', 'updated_at'
       ]
     });
 
@@ -156,6 +159,7 @@ exports.getMasjidById = async (req, res) => {
       return responseHelper.notFound(res, 'Masjid not found');
     }
 
+    res.set('Cache-Control', 'public, max-age=120');
     return responseHelper.success(res, masjid, 'Masjid retrieved successfully');
   } catch (error) {
     logger.error(`Get masjid by ID error: ${error.message}`);
@@ -172,17 +176,21 @@ exports.createMasjid = async (req, res) => {
   
   try {
     await ensureAskImamEnabledColumn(sequelize);
+    await ensureAsrFiqhColumn(sequelize);
+    await ensureAreaColumn(sequelize);
     const {
       name,
       location,
       address,
+      area,
       city,
       state,
       country,
       postal_code,
       contact_email,
       contact_phone,
-      ask_imam_enabled
+      ask_imam_enabled,
+      asr_fiqh
     } = req.body;
 
     // Create masjid
@@ -190,6 +198,7 @@ exports.createMasjid = async (req, res) => {
       name,
       location,
       address,
+      area,
       city,
       state,
       country,
@@ -197,8 +206,17 @@ exports.createMasjid = async (req, res) => {
       contact_email,
       contact_phone,
       ask_imam_enabled: ask_imam_enabled !== undefined ? ask_imam_enabled : true,
+      asr_fiqh: asr_fiqh === 'shafai' ? 'shafai' : 'hanafi',
       created_by: req.userId
     }, { transaction });
+
+    await upsertArea({
+      name: area,
+      city,
+      state,
+      country,
+      createdBy: req.userId
+    });
 
     // Add creator as first admin with all permissions
     await UserMasjid.create({
@@ -234,11 +252,14 @@ exports.createMasjid = async (req, res) => {
  */
 exports.updateMasjid = async (req, res) => {
   try {
+    await ensureAsrFiqhColumn(sequelize);
+    await ensureAreaColumn(sequelize);
     const { id } = req.params;
     const {
       name,
       location,
       address,
+      area,
       city,
       state,
       country,
@@ -246,7 +267,8 @@ exports.updateMasjid = async (req, res) => {
       contact_email,
       contact_phone,
       is_active,
-      ask_imam_enabled
+      ask_imam_enabled,
+      asr_fiqh
     } = req.body;
 
     const masjid = await Masjid.findByPk(id);
@@ -258,6 +280,7 @@ exports.updateMasjid = async (req, res) => {
     if (name) masjid.name = name;
     if (location !== undefined) masjid.location = location;
     if (address !== undefined) masjid.address = address;
+    if (area !== undefined) masjid.area = area;
     if (city !== undefined) masjid.city = city;
     if (state !== undefined) masjid.state = state;
     if (country !== undefined) masjid.country = country;
@@ -266,8 +289,17 @@ exports.updateMasjid = async (req, res) => {
     if (contact_phone !== undefined) masjid.contact_phone = contact_phone;
     if (is_active !== undefined) masjid.is_active = is_active;
     if (ask_imam_enabled !== undefined) masjid.ask_imam_enabled = ask_imam_enabled;
+    if (asr_fiqh !== undefined) masjid.asr_fiqh = asr_fiqh === 'shafai' ? 'shafai' : 'hanafi';
 
     await masjid.save();
+
+    await upsertArea({
+      name: masjid.area,
+      city: masjid.city,
+      state: masjid.state,
+      country: masjid.country,
+      createdBy: req.userId
+    });
 
     logger.info(`Masjid updated: ${masjid.name} by user: ${req.userId}`);
 

@@ -2,6 +2,7 @@ const { Event, Masjid, User } = require('../models');
 const responseHelper = require('../utils/responseHelper');
 const logger = require('../utils/logger');
 const { Op } = require('sequelize');
+const activityLogService = require('../services/activityLogService');
 
 /**
  * Get all events for a masjid
@@ -125,6 +126,13 @@ exports.createEvent = async (req, res) => {
     });
 
     logger.info(`Event created for masjid ${masjidId} by ${req.userId}`);
+
+    activityLogService.logEventCreated({
+      masjidId,
+      userId: req.userId,
+      actorName: req.user?.name || eventWithCreator?.creator?.name,
+      eventName: name
+    }).catch(() => {});
 
     return responseHelper.success(res, eventWithCreator, 'Event created successfully', 201);
   } catch (error) {

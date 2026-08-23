@@ -43,6 +43,8 @@ const MasjidSubscription = require('./MasjidSubscription')(sequelize);
 const DeviceSettings = require('./DeviceSettings')(sequelize);
 const UserFavorite = require('./UserFavorite')(sequelize);
 const AppConfig = require('./AppConfig')(sequelize);
+const ActivityLog = require('./ActivityLog')(sequelize);
+const Area = require('./Area')(sequelize);
 
 // Create models object
 const models = {
@@ -58,6 +60,8 @@ const models = {
   DeviceSettings,
   UserFavorite,
   AppConfig,
+  ActivityLog,
+  Area,
   sequelize,
   Sequelize
 };

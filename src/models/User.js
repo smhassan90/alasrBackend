@@ -182,6 +182,11 @@ module.exports = (sequelize) => {
       foreignKey: 'assigned_by',
       as: 'assignedUserMasajids'
     });
+
+    User.hasMany(models.ActivityLog, {
+      foreignKey: 'user_id',
+      as: 'activityLogs'
+    });
   };
 
   return User;

@@ -1,8 +1,10 @@
-const { PrayerTime, Masjid, User, MasjidSubscription, UserSettings, DeviceSettings, UserMasjid, sequelize } = require('../models');
+const { PrayerTime, Masjid, User, Event, MasjidSubscription, UserSettings, DeviceSettings, UserMasjid, sequelize } = require('../models');
 const responseHelper = require('../utils/responseHelper');
 const logger = require('../utils/logger');
 const pushNotificationService = require('../utils/pushNotificationService');
 const maghribScheduleService = require('../services/maghribScheduleService');
+const { ensureAsrFiqhColumn } = require('../utils/ensureAsrFiqhColumn');
+const activityLogService = require('../services/activityLogService');
 const { Op } = require('sequelize');
 
 const PRAYER_ORDER = "FIELD(prayer_name, 'Fajr', 'Dhuhr', 'Jummah', 'Asr', 'Maghrib', 'Isha')";
@@ -147,11 +149,67 @@ exports.getTodaysPrayerTimes = async (req, res) => {
       result = maghribScheduleService.applyScheduledMaghribToPrayerTimes(masjid, result, today);
     }
 
-    res.set('Cache-Control', 'public, max-age=60');
+    res.set('Cache-Control', 'public, max-age=300');
     return responseHelper.success(res, result, 'Today\'s prayer times retrieved successfully');
   } catch (error) {
     logger.error(`Get today's prayer times error: ${error.message}`, { error: error.stack, masjidId: req.params?.masjidId });
     return responseHelper.error(res, `Failed to retrieve prayer times: ${error.message}`, 500);
+  }
+};
+
+/**
+ * Home bundle: masjid + today's prayer times + upcoming events
+ * @route GET /api/prayer-times/masjid/:masjidId/home-summary
+ */
+exports.getHomeSummary = async (req, res) => {
+  try {
+    const { masjidId } = req.params;
+    await ensureAsrFiqhColumn(sequelize);
+    const masjid = await Masjid.findByPk(masjidId, {
+      attributes: [
+        'id', 'name', 'location', 'address', 'area', 'city', 'state', 'country',
+        'postal_code', 'contact_email', 'contact_phone', 'is_active',
+        'ask_imam_enabled', 'asr_fiqh', 'created_at', 'updated_at'
+      ]
+    });
+    if (!masjid) {
+      return responseHelper.notFound(res, 'Masjid not found');
+    }
+
+    const today = maghribScheduleService.hasAutomatedMaghrib(masjid.city)
+      ? maghribScheduleService.getTodayForCity(masjid.city)
+      : new Date().toISOString().split('T')[0];
+
+    const [latestPrayerTimes, events] = await Promise.all([
+      findLatestPrayerTimes(masjidId, today),
+      Event.findAll({
+        where: {
+          masjid_id: masjidId,
+          status: 'active',
+          [Op.or]: [
+            { event_type: 'recurring' },
+            { event_type: 'one_time', event_date: { [Op.gte]: today } }
+          ]
+        },
+        order: [['event_date', 'ASC'], ['event_time', 'ASC']],
+        limit: 3
+      })
+    ]);
+
+    let prayerTimes = latestPrayerTimes;
+    if (maghribScheduleService.hasAutomatedMaghrib(masjid.city)) {
+      prayerTimes = maghribScheduleService.applyScheduledMaghribToPrayerTimes(masjid, prayerTimes, today);
+    }
+
+    res.set('Cache-Control', 'public, max-age=120');
+    return responseHelper.success(res, {
+      masjid,
+      prayerTimes,
+      events
+    }, 'Home summary retrieved successfully');
+  } catch (error) {
+    logger.error(`Get home summary error: ${error.message}`, { error: error.stack, masjidId: req.params?.masjidId });
+    return responseHelper.error(res, `Failed to retrieve home summary: ${error.message}`, 500);
   }
 };
 
@@ -230,6 +288,13 @@ exports.createPrayerTime = async (req, res) => {
       sendPrayerTimeNotifications(masjid, prayerTimeRecord, req.userId).catch(err => {
         logger.error(`Failed to send prayer time notifications: ${err.message}`);
       });
+      activityLogService.logPrayerTimeUpdate({
+        masjidId,
+        userId: req.userId,
+        actorName: req.user?.name,
+        prayerName,
+        prayerTime
+      }).catch(() => {});
     }
 
     return responseHelper.success(res, prayerTimeRecord, 'Prayer time saved successfully', wasUpdate ? 200 : 201);
@@ -293,6 +358,13 @@ exports.updatePrayerTime = async (req, res) => {
       sendPrayerTimeNotifications(prayerTimeRecord.masjid, prayerTimeRecord, req.userId).catch(err => {
         logger.error(`Failed to send prayer time notifications: ${err.message}`);
       });
+      activityLogService.logPrayerTimeUpdate({
+        masjidId: prayerTimeRecord.masjid_id,
+        userId: req.userId,
+        actorName: req.user?.name,
+        prayerName: prayerTimeRecord.prayer_name,
+        prayerTime: prayerTimeRecord.prayer_time
+      }).catch(() => {});
     }
 
     return responseHelper.success(res, prayerTimeRecord, 'Prayer time updated successfully');
@@ -359,10 +431,12 @@ exports.bulkUpdatePrayerTimes = async (req, res) => {
     const existingByName = new Map(existingRows.map(row => [row.prayer_name, row]));
 
     let hasChanges = false;
+    const changedPrayers = [];
     const upsertRows = incoming.map(pt => {
       const existing = existingByName.get(pt.prayerName);
       if (!existing || existing.prayer_time !== pt.prayerTime) {
         hasChanges = true;
+        changedPrayers.push({ prayerName: pt.prayerName, prayerTime: pt.prayerTime });
       }
       return {
         masjid_id: masjidId,
@@ -414,6 +488,15 @@ exports.bulkUpdatePrayerTimes = async (req, res) => {
     if (hasChanges) {
       sendPrayerTimeBulkNotifications(masjid, createdPrayerTimes, req.userId).catch(err => {
         logger.error(`Failed to send bulk prayer time notifications: ${err.message}`);
+      });
+      changedPrayers.forEach((change) => {
+        activityLogService.logPrayerTimeUpdate({
+          masjidId,
+          userId: req.userId,
+          actorName: req.user?.name,
+          prayerName: change.prayerName,
+          prayerTime: change.prayerTime
+        }).catch(() => {});
       });
     }
 

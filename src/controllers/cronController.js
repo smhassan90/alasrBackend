@@ -1,6 +1,7 @@
 const responseHelper = require('../utils/responseHelper');
 const logger = require('../utils/logger');
 const maghribScheduleService = require('../services/maghribScheduleService');
+const activityLogService = require('../services/activityLogService');
 
 /**
  * Authorize cron callers:
@@ -51,5 +52,28 @@ exports.updateMaghribSchedules = async (req, res) => {
   } catch (error) {
     logger.error(`Cron Maghrib update error: ${error.message}`, { stack: error.stack });
     return responseHelper.error(res, 'Failed to sync Maghrib schedules', 500);
+  }
+};
+
+/**
+ * Daily cron: delete activity logs older than 7 days.
+ * @route GET/POST /api/v1/cron/cleanup-activity-logs
+ */
+exports.cleanupActivityLogs = async (req, res) => {
+  try {
+    if (!process.env.CRON_SECRET && req.headers['x-vercel-cron'] !== '1') {
+      logger.error('CRON_SECRET is not configured and request is not a Vercel cron');
+      return responseHelper.error(res, 'Cron is not configured. Set CRON_SECRET in Vercel env.', 500);
+    }
+
+    if (!isAuthorizedCronRequest(req)) {
+      return responseHelper.forbidden(res, 'Invalid cron secret');
+    }
+
+    const deleted = await activityLogService.pruneOldLogs();
+    return responseHelper.success(res, { deleted }, 'Old activity logs cleaned up');
+  } catch (error) {
+    logger.error(`Cron activity log cleanup error: ${error.message}`, { stack: error.stack });
+    return responseHelper.error(res, 'Failed to clean up activity logs', 500);
   }
 };

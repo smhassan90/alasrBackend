@@ -9,6 +9,7 @@ const { isMasjidMember, canManagePrayerTimes, canManageMasjid } = require('../mi
 
 // Get today's prayer times (public or authenticated)
 router.get('/masjid/:masjidId/today', prayerTimeValidator.masjidIdParamValidator, validate, optionalAuth, prayerTimeController.getTodaysPrayerTimes);
+router.get('/masjid/:masjidId/home-summary', prayerTimeValidator.masjidIdParamValidator, validate, optionalAuth, prayerTimeController.getHomeSummary);
 
 // Allow API key or JWT token for read endpoints (GET requests)
 // For write endpoints (POST, PUT, DELETE), still require JWT authentication

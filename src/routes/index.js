@@ -17,6 +17,8 @@ const superAdminRoutes = require('./superAdminRoutes');
 const deviceSettingsRoutes = require('./deviceSettingsRoutes');
 const favoriteRoutes = require('./favoriteRoutes');
 const cronRoutes = require('./cronRoutes');
+const activityLogRoutes = require('./activityLogRoutes');
+const locationRoutes = require('./locationRoutes');
 
 // Health check endpoint
 router.get('/health', (req, res) => {
@@ -128,6 +130,8 @@ router.use('/subscriptions', subscriptionRoutes);
 router.use('/super-admin', superAdminRoutes);
 router.use('/device-settings', deviceSettingsRoutes);
 router.use('/cron', cronRoutes);
+router.use('/activity-logs', activityLogRoutes);
+router.use('/locations', locationRoutes);
 
 module.exports = router;
 

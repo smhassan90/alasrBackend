@@ -13,6 +13,11 @@ exports.createMasjidValidator = [
   body('address')
     .optional()
     .trim(),
+
+  body('area')
+    .optional()
+    .trim()
+    .isLength({ max: 100 }).withMessage('Area must not exceed 100 characters'),
   
   body('city')
     .optional()
@@ -48,7 +53,11 @@ exports.createMasjidValidator = [
   body('ask_imam_enabled')
     .optional()
     .isBoolean().withMessage('ask_imam_enabled must be a boolean')
-    .toBoolean()
+    .toBoolean(),
+
+  body('asr_fiqh')
+    .optional()
+    .isIn(['hanafi', 'shafai']).withMessage('asr_fiqh must be hanafi or shafai')
 ];
 
 exports.updateMasjidValidator = [
@@ -69,6 +78,11 @@ exports.updateMasjidValidator = [
   body('address')
     .optional()
     .trim(),
+
+  body('area')
+    .optional()
+    .trim()
+    .isLength({ max: 100 }).withMessage('Area must not exceed 100 characters'),
   
   body('city')
     .optional()
@@ -108,7 +122,11 @@ exports.updateMasjidValidator = [
   body('ask_imam_enabled')
     .optional()
     .isBoolean().withMessage('ask_imam_enabled must be a boolean')
-    .toBoolean()
+    .toBoolean(),
+
+  body('asr_fiqh')
+    .optional()
+    .isIn(['hanafi', 'shafai']).withMessage('asr_fiqh must be hanafi or shafai')
 ];
 
 exports.masjidIdValidator = [

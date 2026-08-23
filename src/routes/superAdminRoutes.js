@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const superAdminController = require('../controllers/superAdminController');
+const activityLogController = require('../controllers/activityLogController');
 const superAdminValidator = require('../validators/superAdminValidator');
 const { validate } = require('../middleware/validation');
 const { authenticate } = require('../middleware/auth');
@@ -50,6 +51,8 @@ router.put('/config/app', superAdminValidator.updateAppConfigValidator, validate
 
 // Maghrib auto-sync (manual trigger)
 router.post('/sync-maghrib', superAdminController.syncMaghribSchedules);
+
+router.get('/activity-logs', activityLogController.getAllLogs);
 
 module.exports = router;
 

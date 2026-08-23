@@ -5,6 +5,7 @@ const logger = require('../utils/logger');
 const pushNotificationService = require('../utils/pushNotificationService');
 const { Op } = require('sequelize');
 const { generateDeviceId, isValidDeviceId } = require('../utils/deviceId');
+const activityLogService = require('../services/activityLogService');
 
 /**
  * Get ALL questions across all masajids (Super Admin only)
@@ -263,7 +264,7 @@ exports.setQuestions = async (req, res) => {
       return responseHelper.notFound(res, 'Masjid not found');
     }
 
-    if (masjid.ask_imam_enabled === false) {
+    if (masjid.ask_imam_enabled === false || masjid.ask_imam_enabled === 0) {
       return responseHelper.error(res, 'Ask Imam is not available for this masjid', 403);
     }
 
@@ -362,6 +363,13 @@ exports.replyToQuestion = async (req, res) => {
     question.setDataValue('replied_by_name', replier.name);
 
     logger.info(`Question ${id} replied by ${req.userId} in ${Date.now() - startedAt}ms`);
+
+    activityLogService.logQuestionAnswered({
+      masjidId: question.masjid_id,
+      userId: req.userId,
+      actorName: replier.name,
+      questionTitle: question.title
+    }).catch(() => {});
 
     // Notify after responding so email/FCM never block the API response
     const masjid = question.masjid || { id: question.masjid_id, name: 'Masjid' };
