@@ -9,7 +9,20 @@ const RETENTION_DAYS = 7;
 const ACTIONS = {
   PRAYER_TIME_UPDATED: 'prayer_time_updated',
   EVENT_CREATED: 'event_created',
-  QUESTION_ANSWERED: 'question_answered'
+  QUESTION_ANSWERED: 'question_answered',
+  USER_CREATED: 'user_created',
+  USER_UPDATED: 'user_updated',
+  USER_DELETED: 'user_deleted',
+  USER_PROMOTED: 'user_promoted',
+  USER_DEMOTED: 'user_demoted',
+  USER_ACTIVATED: 'user_activated',
+  USER_DEACTIVATED: 'user_deactivated',
+  MEMBER_ADDED: 'member_added',
+  MEMBER_REMOVED: 'member_removed',
+  MEMBER_ROLE_UPDATED: 'member_role_updated',
+  MASJID_CREATED: 'masjid_created',
+  MASJID_UPDATED: 'masjid_updated',
+  MASJID_DEACTIVATED: 'masjid_deactivated'
 };
 
 function retentionCutoff() {
@@ -128,14 +141,14 @@ async function pruneOldLogs() {
 
 async function logActivity({ masjidId, userId, action, message, metadata }) {
   try {
-    if (!masjidId || !action || !message) {
-      logger.error('Skipped activity log: missing masjidId, action, or message');
+    if (!action || !message) {
+      logger.error('Skipped activity log: missing action or message');
       return null;
     }
     await ensureActivityLogsTable(sequelize);
     try {
       const log = await ActivityLog.create({
-        masjid_id: masjidId,
+        masjid_id: masjidId || null,
         user_id: userId || null,
         action,
         message: String(message).slice(0, 500),
@@ -145,7 +158,7 @@ async function logActivity({ masjidId, userId, action, message, metadata }) {
       return log;
     } catch (error) {
       logger.error(`Sequelize activity log write failed: ${error.message}`);
-      await insertLogRaw({ masjidId, userId, action, message, metadata });
+      await insertLogRaw({ masjidId: masjidId || null, userId, action, message, metadata });
       pruneOldLogs().catch(() => {});
       return { id: true };
     }
@@ -187,6 +200,134 @@ function logQuestionAnswered({ masjidId, userId, actorName, questionTitle }) {
     action: ACTIONS.QUESTION_ANSWERED,
     message: `${name} answered "${title}"`,
     metadata: { questionTitle: title }
+  });
+}
+
+function logAdminAction({ masjidId, userId, action, message, metadata }) {
+  return logActivity({
+    masjidId: masjidId || null,
+    userId,
+    action,
+    message,
+    metadata
+  });
+}
+
+function logUserCreated({ userId, actorName, targetName, targetEmail, masjidId, masjidName, role }) {
+  const name = actorName || 'A super admin';
+  const target = targetName || targetEmail || 'a user';
+  let message = `${name} created user "${target}"`;
+  if (targetEmail && targetName) {
+    message = `${name} created user "${targetName}" (${targetEmail})`;
+  }
+  if (masjidName && role) {
+    message += ` and added them as ${role} of ${masjidName}`;
+  }
+  return logAdminAction({
+    masjidId,
+    userId,
+    action: ACTIONS.USER_CREATED,
+    message,
+    metadata: { targetName, targetEmail, masjidName, role }
+  });
+}
+
+function logUserUpdated({ userId, actorName, targetName, masjidId }) {
+  const name = actorName || 'A super admin';
+  return logAdminAction({
+    masjidId,
+    userId,
+    action: ACTIONS.USER_UPDATED,
+    message: `${name} updated user "${targetName || 'a user'}"`,
+    metadata: { targetName }
+  });
+}
+
+function logUserDeleted({ userId, actorName, targetName, targetEmail }) {
+  const name = actorName || 'A super admin';
+  const target = targetName || 'a user';
+  const emailPart = targetEmail ? ` (${targetEmail})` : '';
+  return logAdminAction({
+    userId,
+    action: ACTIONS.USER_DELETED,
+    message: `${name} deleted user "${target}"${emailPart}`,
+    metadata: { targetName, targetEmail }
+  });
+}
+
+function logUserStatusChanged({ userId, actorName, targetName, action, label, description }) {
+  const name = actorName || 'A super admin';
+  return logAdminAction({
+    userId,
+    action,
+    message: `${name} ${label || description}`,
+    metadata: { targetName }
+  });
+}
+
+function logMemberAdded({ masjidId, userId, actorName, targetName, masjidName, role }) {
+  const name = actorName || 'A user';
+  return logAdminAction({
+    masjidId,
+    userId,
+    action: ACTIONS.MEMBER_ADDED,
+    message: `${name} added ${targetName || 'a user'} as ${role || 'a member'} of ${masjidName || 'a masjid'}`,
+    metadata: { targetName, masjidName, role }
+  });
+}
+
+function logMemberRemoved({ masjidId, userId, actorName, targetName, masjidName }) {
+  const name = actorName || 'A user';
+  return logAdminAction({
+    masjidId,
+    userId,
+    action: ACTIONS.MEMBER_REMOVED,
+    message: `${name} removed ${targetName || 'a user'} from ${masjidName || 'a masjid'}`,
+    metadata: { targetName, masjidName }
+  });
+}
+
+function logMemberRoleUpdated({ masjidId, userId, actorName, targetName, masjidName, role }) {
+  const name = actorName || 'A user';
+  return logAdminAction({
+    masjidId,
+    userId,
+    action: ACTIONS.MEMBER_ROLE_UPDATED,
+    message: `${name} changed ${targetName || 'a user'} to ${role} at ${masjidName || 'a masjid'}`,
+    metadata: { targetName, masjidName, role }
+  });
+}
+
+function logMasjidCreated({ masjidId, userId, actorName, masjidName }) {
+  const name = actorName || 'A user';
+  return logAdminAction({
+    masjidId,
+    userId,
+    action: ACTIONS.MASJID_CREATED,
+    message: `${name} created masjid "${masjidName || 'a masjid'}"`,
+    metadata: { masjidName }
+  });
+}
+
+function logMasjidUpdated({ masjidId, userId, actorName, masjidName }) {
+  const name = actorName || 'A user';
+  return logAdminAction({
+    masjidId,
+    userId,
+    action: ACTIONS.MASJID_UPDATED,
+    message: `${name} updated masjid "${masjidName || 'a masjid'}"`,
+    metadata: { masjidName }
+  });
+}
+
+function logMasjidDeactivated({ masjidId, userId, actorName, masjidName }) {
+  const name = actorName || 'A user';
+  return logAdminAction({
+    masjidId,
+    userId,
+    action: ACTIONS.MASJID_DEACTIVATED,
+    message: `${name} deactivated masjid "${masjidName || 'a masjid'}"`,
+    metadata: { masjidName }
   });
 }
 
@@ -304,6 +445,17 @@ module.exports = {
   logPrayerTimeUpdate,
   logEventCreated,
   logQuestionAnswered,
+  logAdminAction,
+  logUserCreated,
+  logUserUpdated,
+  logUserDeleted,
+  logUserStatusChanged,
+  logMemberAdded,
+  logMemberRemoved,
+  logMemberRoleUpdated,
+  logMasjidCreated,
+  logMasjidUpdated,
+  logMasjidDeactivated,
   listLogs,
   pruneOldLogs,
   getLogs: listLogs,

@@ -9,7 +9,7 @@ module.exports = (sequelize) => {
     },
     masjid_id: {
       type: DataTypes.UUID,
-      allowNull: false,
+      allowNull: true,
       references: {
         model: 'masajids',
         key: 'id'

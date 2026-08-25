@@ -5,6 +5,20 @@ const { Op } = require('sequelize');
 const { invalidateAppConfigCache } = require('../utils/appConfigCache');
 const { detachUserFromMasajids } = require('../utils/detachUserFromMasajids');
 const { ensureMasjidCreatedByFk } = require('../utils/ensureMasjidCreatedByFk');
+const {
+  ACTIONS,
+  logUserCreated,
+  logUserUpdated,
+  logUserDeleted,
+  logUserStatusChanged,
+  logMemberAdded,
+  logMemberRemoved,
+  logMemberRoleUpdated
+} = require('../services/activityLogService');
+
+function actorName(req) {
+  return req.user?.name || 'A super admin';
+}
 
 /**
  * Get all users (Super Admin only)
@@ -134,6 +148,13 @@ exports.promoteToSuperAdmin = async (req, res) => {
     await user.save();
 
     logger.info(`User ${id} promoted to super admin by ${req.userId}`);
+    await logUserStatusChanged({
+      userId: req.userId,
+      actorName: actorName(req),
+      targetName: user.name,
+      action: ACTIONS.USER_PROMOTED,
+      label: `promoted "${user.name}" to super admin`
+    });
 
     return responseHelper.success(res, user.toSafeObject(), 'User promoted to super admin successfully');
   } catch (error) {
@@ -173,6 +194,13 @@ exports.demoteFromSuperAdmin = async (req, res) => {
     await user.save();
 
     logger.info(`User ${id} demoted from super admin by ${req.userId}`);
+    await logUserStatusChanged({
+      userId: req.userId,
+      actorName: actorName(req),
+      targetName: user.name,
+      action: ACTIONS.USER_DEMOTED,
+      label: `demoted "${user.name}" from super admin`
+    });
 
     return responseHelper.success(res, user.toSafeObject(), 'User demoted from super admin successfully');
   } catch (error) {
@@ -221,6 +249,13 @@ exports.deactivateUser = async (req, res) => {
     await user.save();
 
     logger.info(`User ${id} deactivated by ${req.userId}`);
+    await logUserStatusChanged({
+      userId: req.userId,
+      actorName: actorName(req),
+      targetName: user.name,
+      action: ACTIONS.USER_DEACTIVATED,
+      label: `deactivated user "${user.name}"`
+    });
 
     return responseHelper.success(res, user.toSafeObject(), 'User deactivated successfully');
   } catch (error) {
@@ -246,6 +281,13 @@ exports.activateUser = async (req, res) => {
     await user.save();
 
     logger.info(`User ${id} activated by ${req.userId}`);
+    await logUserStatusChanged({
+      userId: req.userId,
+      actorName: actorName(req),
+      targetName: user.name,
+      action: ACTIONS.USER_ACTIVATED,
+      label: `activated user "${user.name}"`
+    });
 
     return responseHelper.success(res, user.toSafeObject(), 'User activated successfully');
   } catch (error) {
@@ -292,6 +334,8 @@ exports.createUser = async (req, res) => {
 
     // If masjid assignment is provided, assign user to masjid
     let userMasjid = null;
+    let assignedMasjidName = null;
+    let assignedRole = null;
     if (masjid_assignment && masjid_assignment.masjid_id) {
       const { masjid_id, role, permissions } = masjid_assignment;
 
@@ -301,6 +345,8 @@ exports.createUser = async (req, res) => {
         await transaction.rollback();
         return responseHelper.error(res, 'Masjid not found', 404);
       }
+      assignedMasjidName = masjid.name;
+      assignedRole = role;
 
       // Set default permissions based on role if not provided
       const defaultPermissions = {
@@ -325,6 +371,15 @@ exports.createUser = async (req, res) => {
     await transaction.commit();
 
     logger.info(`User ${user.email} created by super admin ${req.userId}`);
+    await logUserCreated({
+      userId: req.userId,
+      actorName: actorName(req),
+      targetName: user.name,
+      targetEmail: user.email,
+      masjidId: userMasjid?.masjid_id,
+      masjidName: assignedMasjidName,
+      role: assignedRole
+    });
 
     const response = {
       user: user.toSafeObject(),
@@ -413,9 +468,22 @@ exports.updateUser = async (req, res) => {
 
     // Handle masjid_assignment
     let userMasjid = null;
+    let memberLog = null;
     
     if (masjid_assignment !== undefined) {
       if (masjid_assignment === null) {
+        const existingAssignment = await UserMasjid.findOne({
+          where: { user_id: id },
+          transaction
+        });
+        if (existingAssignment) {
+          const assignedMasjid = await Masjid.findByPk(existingAssignment.masjid_id, { transaction });
+          memberLog = {
+            type: 'removed',
+            masjidId: existingAssignment.masjid_id,
+            masjidName: assignedMasjid?.name
+          };
+        }
         // Remove masjid assignment if null is provided
         await UserMasjid.destroy({
           where: { user_id: id },
@@ -455,6 +523,12 @@ exports.updateUser = async (req, res) => {
           Object.assign(existingAssignment, defaultPermissions);
           await existingAssignment.save({ transaction });
           userMasjid = existingAssignment;
+          memberLog = {
+            type: 'updated',
+            masjidId: masjid.id,
+            masjidName: masjid.name,
+            role: masjid_assignment.role
+          };
           logger.info(`Masjid assignment updated for user ${id}`);
         } else {
           // Create new assignment
@@ -465,6 +539,12 @@ exports.updateUser = async (req, res) => {
             assigned_by: req.userId,
             ...defaultPermissions
           }, { transaction });
+          memberLog = {
+            type: 'added',
+            masjidId: masjid.id,
+            masjidName: masjid.name,
+            role: masjid_assignment.role
+          };
           logger.info(`Masjid assignment created for user ${id}`);
         }
       }
@@ -479,6 +559,39 @@ exports.updateUser = async (req, res) => {
     await transaction.commit();
 
     logger.info(`User ${id} updated by super admin ${req.userId}`);
+    await logUserUpdated({
+      userId: req.userId,
+      actorName: actorName(req),
+      targetName: user.name,
+      masjidId: memberLog?.masjidId || userMasjid?.masjid_id
+    });
+    if (memberLog?.type === 'added') {
+      await logMemberAdded({
+        masjidId: memberLog.masjidId,
+        userId: req.userId,
+        actorName: actorName(req),
+        targetName: user.name,
+        masjidName: memberLog.masjidName,
+        role: memberLog.role
+      });
+    } else if (memberLog?.type === 'removed') {
+      await logMemberRemoved({
+        masjidId: memberLog.masjidId,
+        userId: req.userId,
+        actorName: actorName(req),
+        targetName: user.name,
+        masjidName: memberLog.masjidName
+      });
+    } else if (memberLog?.type === 'updated') {
+      await logMemberRoleUpdated({
+        masjidId: memberLog.masjidId,
+        userId: req.userId,
+        actorName: actorName(req),
+        targetName: user.name,
+        masjidName: memberLog.masjidName,
+        role: memberLog.role
+      });
+    }
 
     // Return response matching create user format
     const response = {
@@ -551,12 +664,21 @@ exports.deleteUser = async (req, res) => {
       transaction
     });
 
+    const deletedName = user.name;
+    const deletedEmail = user.email;
+
     // Delete the user
     await user.destroy({ transaction });
 
     await transaction.commit();
 
-    logger.info(`User ${id} (${user.email}) deleted by super admin ${req.userId}`);
+    logger.info(`User ${id} (${deletedEmail}) deleted by super admin ${req.userId}`);
+    await logUserDeleted({
+      userId: req.userId,
+      actorName: actorName(req),
+      targetName: deletedName,
+      targetEmail: deletedEmail
+    });
 
     return responseHelper.success(res, null, 'User deleted successfully');
   } catch (error) {

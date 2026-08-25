@@ -6,6 +6,11 @@ const { ensureAskImamEnabledColumn } = require('../utils/ensureAskImamColumn');
 const { ensureAsrFiqhColumn } = require('../utils/ensureAsrFiqhColumn');
 const { ensureAreaColumn } = require('../utils/ensureAreaColumn');
 const { upsertArea } = require('../utils/upsertArea');
+const { logMasjidCreated, logMasjidUpdated, logMasjidDeactivated } = require('../services/activityLogService');
+
+function actorName(req) {
+  return req.user?.name || 'A user';
+}
 
 /**
  * Get all masajids
@@ -237,6 +242,12 @@ exports.createMasjid = async (req, res) => {
     await transaction.commit();
 
     logger.info(`Masjid created: ${masjid.name} by user: ${req.userId}`);
+    await logMasjidCreated({
+      masjidId: masjid.id,
+      userId: req.userId,
+      actorName: actorName(req),
+      masjidName: masjid.name
+    });
 
     return responseHelper.success(res, masjid, 'Masjid created successfully', 201);
   } catch (error) {
@@ -302,6 +313,12 @@ exports.updateMasjid = async (req, res) => {
     });
 
     logger.info(`Masjid updated: ${masjid.name} by user: ${req.userId}`);
+    await logMasjidUpdated({
+      masjidId: masjid.id,
+      userId: req.userId,
+      actorName: actorName(req),
+      masjidName: masjid.name
+    });
 
     return responseHelper.success(res, masjid, 'Masjid updated successfully');
   } catch (error) {
@@ -328,6 +345,12 @@ exports.deleteMasjid = async (req, res) => {
     await masjid.save();
 
     logger.info(`Masjid deleted: ${masjid.name} by user: ${req.userId}`);
+    await logMasjidDeactivated({
+      masjidId: masjid.id,
+      userId: req.userId,
+      actorName: actorName(req),
+      masjidName: masjid.name
+    });
 
     return responseHelper.success(res, null, 'Masjid deleted successfully');
   } catch (error) {

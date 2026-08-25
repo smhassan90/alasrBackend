@@ -12,7 +12,7 @@ async function createActivityLogsTable(sequelize) {
   await sequelize.query(`
     CREATE TABLE IF NOT EXISTS activity_logs (
       id CHAR(36) NOT NULL,
-      masjid_id CHAR(36) NOT NULL,
+      masjid_id CHAR(36) NULL,
       user_id CHAR(36) NULL,
       action VARCHAR(50) NOT NULL,
       message VARCHAR(500) NOT NULL,
@@ -45,6 +45,12 @@ async function ensureActivityLogsTable(sequelize) {
           if (!(await tableExists(sequelize))) {
             throw error;
           }
+        }
+      } else {
+        try {
+          await sequelize.query('ALTER TABLE activity_logs MODIFY masjid_id CHAR(36) NULL');
+        } catch (error) {
+          logger.warn(`Could not allow null activity_logs.masjid_id: ${error.message}`);
         }
       }
       ready = true;

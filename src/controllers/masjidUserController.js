@@ -3,6 +3,11 @@ const responseHelper = require('../utils/responseHelper');
 const permissionChecker = require('../utils/permissionChecker');
 const emailService = require('../utils/emailService');
 const logger = require('../utils/logger');
+const { logMemberAdded, logMemberRemoved, logMemberRoleUpdated } = require('../services/activityLogService');
+
+function actorName(req) {
+  return req.user?.name || 'A user';
+}
 
 /**
  * Add user to masjid (as imam or admin)
@@ -80,6 +85,14 @@ exports.addUserToMasjid = async (req, res) => {
     );
 
     logger.info(`User ${userId} added to masjid ${masjidId} as ${role} by ${req.userId}`);
+    await logMemberAdded({
+      masjidId,
+      userId: req.userId,
+      actorName: admin?.name || actorName(req),
+      targetName: user.name,
+      masjidName: masjid.name,
+      role
+    });
 
     return responseHelper.success(res, userMasjid, 'User added to masjid successfully', 201);
   } catch (error) {
@@ -133,6 +146,13 @@ exports.removeUserFromMasjid = async (req, res) => {
     }
 
     logger.info(`User ${userId} removed from masjid ${masjidId} by ${req.userId}`);
+    await logMemberRemoved({
+      masjidId,
+      userId: req.userId,
+      actorName: admin?.name || actorName(req),
+      targetName: user?.name,
+      masjidName: masjid?.name
+    });
 
     return responseHelper.success(res, null, 'User removed from masjid successfully');
   } catch (error) {
@@ -201,6 +221,18 @@ exports.updateUserRole = async (req, res) => {
     await transaction.commit();
 
     logger.info(`User ${userId} role updated to ${role} in masjid ${masjidId} by ${req.userId}`);
+    const [member, masjid] = await Promise.all([
+      User.findByPk(userId),
+      Masjid.findByPk(masjidId)
+    ]);
+    await logMemberRoleUpdated({
+      masjidId,
+      userId: req.userId,
+      actorName: actorName(req),
+      targetName: member?.name,
+      masjidName: masjid?.name,
+      role
+    });
 
     return responseHelper.success(res, userMasjid, 'User role updated successfully');
   } catch (error) {
