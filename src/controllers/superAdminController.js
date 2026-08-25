@@ -3,6 +3,8 @@ const responseHelper = require('../utils/responseHelper');
 const logger = require('../utils/logger');
 const { Op } = require('sequelize');
 const { invalidateAppConfigCache } = require('../utils/appConfigCache');
+const { detachUserFromMasajids } = require('../utils/detachUserFromMasajids');
+const { ensureMasjidCreatedByFk } = require('../utils/ensureMasjidCreatedByFk');
 
 /**
  * Get all users (Super Admin only)
@@ -510,6 +512,12 @@ exports.updateUser = async (req, res) => {
  * @route DELETE /api/super-admin/users/:id
  */
 exports.deleteUser = async (req, res) => {
+  try {
+    await ensureMasjidCreatedByFk(sequelize);
+  } catch (fkError) {
+    logger.warn(`Could not update masajids.created_by foreign key: ${fkError.message}`);
+  }
+
   const transaction = await sequelize.transaction();
   
   try {
@@ -536,9 +544,10 @@ exports.deleteUser = async (req, res) => {
       }
     }
 
-    // Remove user from all masajids first
-    await UserMasjid.destroy({
-      where: { user_id: id },
+    // Keep the masjid. Only remove this user as a member and hand off created_by.
+    await detachUserFromMasajids({
+      userId: id,
+      fallbackUserId: req.userId,
       transaction
     });
 
