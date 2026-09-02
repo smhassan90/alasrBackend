@@ -20,8 +20,9 @@ exports.createEventValidator = [
     
   body('dayOfWeek')
     .if(body('eventType').equals('recurring'))
-    .notEmpty().withMessage('Day of week is required for recurring events')
-    .isInt({ min: 0, max: 6 }).withMessage('Day of week must be between 0 (Sunday) and 6 (Saturday)'),
+    .exists({ values: 'null' }).withMessage('Day of week is required for recurring events')
+    .isInt({ min: 0, max: 6 }).withMessage('Day of week must be between 0 (Sunday) and 6 (Saturday)')
+    .toInt(),
 
   body('eventDate')
     .if(body('eventType').not().equals('recurring'))

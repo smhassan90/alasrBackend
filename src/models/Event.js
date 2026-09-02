@@ -64,6 +64,10 @@ module.exports = (sequelize) => {
       type: DataTypes.ENUM('active', 'deleted'),
       defaultValue: 'active',
       allowNull: false
+    },
+    last_notified_on: {
+      type: DataTypes.DATEONLY,
+      allowNull: true
     }
   }, {
     tableName: 'events',

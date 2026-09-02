@@ -188,7 +188,7 @@ exports.getHomeSummary = async (req, res) => {
       attributes: [
         'id', 'name', 'location', 'address', 'area', 'city', 'state', 'country',
         'postal_code', 'contact_email', 'contact_phone', 'is_active',
-        'ask_imam_enabled', 'asr_fiqh', 'created_at', 'updated_at'
+        'ask_imam_enabled', 'asr_fiqh', 'latitude', 'longitude', 'created_at', 'updated_at'
       ]
     });
     if (!masjid) {
@@ -211,7 +211,7 @@ exports.getHomeSummary = async (req, res) => {
           ]
         },
         order: [['event_date', 'ASC'], ['event_time', 'ASC']],
-        limit: 3
+        limit: 20
       })
     ]);
 
@@ -286,7 +286,7 @@ exports.createPrayerTime = async (req, res) => {
       
       logger.info(`Prayer time updated: ${prayerName} for masjid ${masjidId} by ${req.userId}`);
     } else {
-      // Create new - always notify for new prayer times
+      // Create new prayer time — notify only if the imam kept Notify All checked
       timeChanged = true;
       prayerTimeRecord = await PrayerTime.create({
         masjid_id: masjidId,
@@ -300,13 +300,13 @@ exports.createPrayerTime = async (req, res) => {
       logger.info(`Prayer time created: ${prayerName} for masjid ${masjidId} by ${req.userId}`);
     }
 
-    // Send notifications automatically when prayer time changes (only to subscribed users)
-    // The sendPrayerTimeNotifications function already filters by user preferences
-    // Exclude the user who made the change (imam/admin) from receiving notifications
-    if (timeChanged) {
+    if (timeChanged && notifyUsers === true) {
       sendPrayerTimeNotifications(masjid, prayerTimeRecord, req.userId).catch(err => {
         logger.error(`Failed to send prayer time notifications: ${err.message}`);
       });
+    }
+
+    if (timeChanged) {
       await activityLogService.logPrayerTimeUpdate({
         masjidId,
         userId: req.userId,
@@ -370,13 +370,13 @@ exports.updatePrayerTime = async (req, res) => {
 
     logger.info(`Prayer time ${id} updated by ${req.userId}`);
 
-    // Send notifications automatically when prayer time changes (only to subscribed users)
-    // The sendPrayerTimeNotifications function already filters by user preferences
-    // Exclude the user who made the change (imam/admin) from receiving notifications
-    if (timeChanged) {
+    if (timeChanged && notifyUsers === true) {
       sendPrayerTimeNotifications(prayerTimeRecord.masjid, prayerTimeRecord, req.userId).catch(err => {
         logger.error(`Failed to send prayer time notifications: ${err.message}`);
       });
+    }
+
+    if (timeChanged) {
       await activityLogService.logPrayerTimeUpdate({
         masjidId: prayerTimeRecord.masjid_id,
         userId: req.userId,
@@ -501,10 +501,7 @@ exports.bulkUpdatePrayerTimes = async (req, res) => {
 
     logger.info(`Bulk prayer times updated for masjid ${masjidId} by ${req.userId}`);
 
-    // Send notifications automatically when prayer times change (only to subscribed users)
-    // The sendPrayerTimeBulkNotifications function already filters by user preferences
-    // Exclude the user who made the change (imam/admin) from receiving notifications
-    if (hasChanges) {
+    if (hasChanges && notifyUsers === true) {
       sendPrayerTimeBulkNotifications(masjid, createdPrayerTimes, req.userId).catch(err => {
         logger.error(`Failed to send bulk prayer time notifications: ${err.message}`);
       });

@@ -59,7 +59,7 @@ exports.getFavorites = async (req, res) => {
         {
           model: Masjid,
           as: 'masjid',
-          attributes: ['id', 'name', 'address', 'location', 'area', 'city', 'state', 'country', 'postal_code', 'contact_email', 'contact_phone', 'is_active', 'ask_imam_enabled', 'asr_fiqh']
+          attributes: ['id', 'name', 'address', 'location', 'area', 'city', 'state', 'country', 'postal_code', 'contact_email', 'contact_phone', 'is_active', 'ask_imam_enabled', 'asr_fiqh', 'latitude', 'longitude']
         }
       ],
       order: [['created_at', 'DESC']]

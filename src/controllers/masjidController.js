@@ -5,6 +5,8 @@ const { Op } = require('sequelize');
 const { ensureAskImamEnabledColumn } = require('../utils/ensureAskImamColumn');
 const { ensureAsrFiqhColumn } = require('../utils/ensureAsrFiqhColumn');
 const { ensureAreaColumn } = require('../utils/ensureAreaColumn');
+const { ensureMasjidCoordinates } = require('../utils/ensureMasjidCoordinates');
+const { persistMasjidCoordinates } = require('../utils/geocodeMasjid');
 const { upsertArea } = require('../utils/upsertArea');
 const { logMasjidCreated, logMasjidUpdated, logMasjidDeactivated } = require('../services/activityLogService');
 
@@ -22,6 +24,7 @@ exports.getAllMasajids = async (req, res) => {
   try {
     await ensureAsrFiqhColumn(sequelize);
     await ensureAreaColumn(sequelize);
+    await ensureMasjidCoordinates(sequelize);
     const { page = 1, search } = req.query;
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 100);
     const offset = (page - 1) * limit;
@@ -97,7 +100,7 @@ exports.getAllMasajids = async (req, res) => {
         attributes: [
           'id', 'name', 'location', 'address', 'area', 'city', 'state', 'country',
           'postal_code', 'contact_email', 'contact_phone', 'is_active',
-          'ask_imam_enabled', 'asr_fiqh', 'created_at', 'updated_at'
+          'ask_imam_enabled', 'asr_fiqh', 'latitude', 'longitude', 'created_at', 'updated_at'
         ]
       }),
       subscriptionWhere
@@ -109,6 +112,15 @@ exports.getAllMasajids = async (req, res) => {
     ]);
 
     const { count, rows: masajids } = listResult;
+
+    masajids
+      .filter(masjid => masjid.latitude == null || masjid.longitude == null)
+      .slice(0, 3)
+      .forEach(masjid => {
+        persistMasjidCoordinates(masjid).catch(err => {
+          logger.warn(`Background geocode failed for masjid ${masjid.id}: ${err.message}`);
+        });
+      });
 
     // Add subscription status to each masjid
     const masajidsWithSubscription = masajids.map(masjid => {
@@ -150,18 +162,23 @@ exports.getMasjidById = async (req, res) => {
   try {
     await ensureAsrFiqhColumn(sequelize);
     await ensureAreaColumn(sequelize);
+    await ensureMasjidCoordinates(sequelize);
     const { id } = req.params;
 
     const masjid = await Masjid.findByPk(id, {
       attributes: [
         'id', 'name', 'location', 'address', 'area', 'city', 'state', 'country',
         'postal_code', 'contact_email', 'contact_phone', 'is_active',
-        'ask_imam_enabled', 'asr_fiqh', 'created_at', 'updated_at'
+        'ask_imam_enabled', 'asr_fiqh', 'latitude', 'longitude', 'created_at', 'updated_at'
       ]
     });
 
     if (!masjid) {
       return responseHelper.notFound(res, 'Masjid not found');
+    }
+
+    if (masjid.latitude == null || masjid.longitude == null) {
+      await persistMasjidCoordinates(masjid);
     }
 
     res.set('Cache-Control', 'public, max-age=120');
@@ -183,6 +200,7 @@ exports.createMasjid = async (req, res) => {
     await ensureAskImamEnabledColumn(sequelize);
     await ensureAsrFiqhColumn(sequelize);
     await ensureAreaColumn(sequelize);
+    await ensureMasjidCoordinates(sequelize);
     const {
       name,
       location,
@@ -241,6 +259,10 @@ exports.createMasjid = async (req, res) => {
 
     await transaction.commit();
 
+    persistMasjidCoordinates(masjid).catch(err => {
+      logger.warn(`Background geocode failed for masjid ${masjid.id}: ${err.message}`);
+    });
+
     logger.info(`Masjid created: ${masjid.name} by user: ${req.userId}`);
     await logMasjidCreated({
       masjidId: masjid.id,
@@ -265,6 +287,7 @@ exports.updateMasjid = async (req, res) => {
   try {
     await ensureAsrFiqhColumn(sequelize);
     await ensureAreaColumn(sequelize);
+    await ensureMasjidCoordinates(sequelize);
     const { id } = req.params;
     const {
       name,
@@ -391,9 +414,14 @@ exports.setDefaultMasjid = async (req, res) => {
       }
     );
 
-    // Set this masjid as default
-    userMasjid.is_default = true;
-    await userMasjid.save({ transaction });
+    // Mark every role row for this masjid as default so list/read stay consistent
+    await UserMasjid.update(
+      { is_default: true },
+      {
+        where: { user_id: req.userId, masjid_id: id },
+        transaction
+      }
+    );
 
     await transaction.commit();
 

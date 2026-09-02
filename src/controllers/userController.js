@@ -280,7 +280,7 @@ exports.getUserMasajids = async (req, res) => {
           state: um.masjid.state,
           country: um.masjid.country,
           roles: [],
-          isDefault: um.is_default
+          isDefault: um.is_default === true || um.is_default === 1
         };
       }
       masajidsMap[masjidId].roles.push(um.role);

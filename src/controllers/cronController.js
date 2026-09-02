@@ -2,6 +2,7 @@ const responseHelper = require('../utils/responseHelper');
 const logger = require('../utils/logger');
 const maghribScheduleService = require('../services/maghribScheduleService');
 const activityLogService = require('../services/activityLogService');
+const eventReminderService = require('../services/eventReminderService');
 
 /**
  * Authorize cron callers:
@@ -75,5 +76,28 @@ exports.cleanupActivityLogs = async (req, res) => {
   } catch (error) {
     logger.error(`Cron activity log cleanup error: ${error.message}`, { stack: error.stack });
     return responseHelper.error(res, 'Failed to clean up activity logs', 500);
+  }
+};
+
+/**
+ * Frequent cron: notify subscribers 15 minutes before today's events.
+ * @route GET/POST /api/v1/cron/notify-upcoming-events
+ */
+exports.notifyUpcomingEvents = async (req, res) => {
+  try {
+    if (!process.env.CRON_SECRET && req.headers['x-vercel-cron'] !== '1') {
+      logger.error('CRON_SECRET is not configured and request is not a Vercel cron');
+      return responseHelper.error(res, 'Cron is not configured. Set CRON_SECRET in Vercel env.', 500);
+    }
+
+    if (!isAuthorizedCronRequest(req)) {
+      return responseHelper.forbidden(res, 'Invalid cron secret');
+    }
+
+    const summary = await eventReminderService.notifyUpcomingEvents();
+    return responseHelper.success(res, summary, 'Upcoming event reminders processed');
+  } catch (error) {
+    logger.error(`Cron event reminder error: ${error.message}`, { stack: error.stack });
+    return responseHelper.error(res, 'Failed to send event reminders', 500);
   }
 };

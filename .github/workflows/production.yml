@@ -14,6 +14,8 @@ on:
   schedule:
     # Daily Maghrib sync (~19:05 UTC). Apps also get correct Maghrib on /today reads.
     - cron: '5 19 * * *'
+    # Recurring event reminders (~15 minutes before start).
+    - cron: '*/10 * * * *'
   workflow_dispatch:
     inputs:
       run_maghrib_sync:
@@ -27,9 +29,27 @@ env:
   PRODUCTION_API_URL: 'https://alasrbackend.vercel.app'
 
 jobs:
+  notify-events:
+    name: Notify upcoming events
+    if: github.event_name == 'schedule' && github.event.schedule == '*/10 * * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger event reminders
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "CRON_SECRET is not set; skipping event reminders"
+            exit 0
+          fi
+          curl -fsS -X POST \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            -H "Content-Type: application/json" \
+            "${PRODUCTION_API_URL}/api/v1/cron/notify-upcoming-events"
+
   sync-maghrib:
     name: Sync Maghrib schedules
-    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.run_maghrib_sync == true)
+    if: (github.event_name == 'schedule' && github.event.schedule == '5 19 * * *') || (github.event_name == 'workflow_dispatch' && inputs.run_maghrib_sync == true)
     runs-on: ubuntu-latest
     steps:
       - name: Trigger Maghrib sync

@@ -71,6 +71,14 @@ module.exports = (sequelize) => {
         isIn: [['hanafi', 'shafai']]
       }
     },
+    latitude: {
+      type: DataTypes.DECIMAL(10, 7),
+      allowNull: true
+    },
+    longitude: {
+      type: DataTypes.DECIMAL(10, 7),
+      allowNull: true
+    },
     created_by: {
       type: DataTypes.UUID,
       allowNull: true,
