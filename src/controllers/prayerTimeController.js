@@ -6,6 +6,7 @@ const maghribScheduleService = require('../services/maghribScheduleService');
 const { ensureAsrFiqhColumn } = require('../utils/ensureAsrFiqhColumn');
 const activityLogService = require('../services/activityLogService');
 const { Op } = require('sequelize');
+const { uniqueById, upcomingEventWhere } = require('../utils/uniqueById');
 
 const PRAYER_ORDER = "FIELD(prayer_name, 'Fajr', 'Dhuhr', 'Jummah', 'Asr', 'Maghrib', 'Isha')";
 
@@ -202,17 +203,10 @@ exports.getHomeSummary = async (req, res) => {
     const [latestPrayerTimes, events] = await Promise.all([
       findLatestPrayerTimes(masjidId, today),
       Event.findAll({
-        where: {
-          masjid_id: masjidId,
-          status: 'active',
-          [Op.or]: [
-            { event_type: 'recurring' },
-            { event_type: 'one_time', event_date: { [Op.gte]: today } }
-          ]
-        },
+        where: upcomingEventWhere(masjidId, today),
         order: [['event_date', 'ASC'], ['event_time', 'ASC']],
         limit: 20
-      })
+      }).then(uniqueById)
     ]);
 
     let prayerTimes = latestPrayerTimes;

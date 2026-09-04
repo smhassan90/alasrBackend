@@ -276,6 +276,7 @@ exports.getUserMasajids = async (req, res) => {
           name: um.masjid.name,
           location: um.masjid.location,
           address: um.masjid.address,
+          area: um.masjid.area,
           city: um.masjid.city,
           state: um.masjid.state,
           country: um.masjid.country,

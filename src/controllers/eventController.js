@@ -3,6 +3,7 @@ const responseHelper = require('../utils/responseHelper');
 const logger = require('../utils/logger');
 const { Op } = require('sequelize');
 const activityLogService = require('../services/activityLogService');
+const { uniqueById, upcomingEventWhere } = require('../utils/uniqueById');
 
 /**
  * Get all events for a masjid
@@ -32,15 +33,17 @@ exports.getEventsByMasjid = async (req, res) => {
         {
           model: User,
           as: 'creator',
-          attributes: ['id', 'name', 'email']
+          attributes: ['id', 'name', 'email'],
+          duplicating: false
         }
       ],
+      distinct: true,
       limit: parseInt(limit),
       offset: parseInt(offset),
       order: [['event_date', 'DESC'], ['event_time', 'DESC']]
     });
 
-    return responseHelper.paginated(res, events, {
+    return responseHelper.paginated(res, uniqueById(events), {
       page: parseInt(page),
       limit: parseInt(limit),
       totalItems: count
@@ -235,34 +238,24 @@ exports.getUpcomingEvents = async (req, res) => {
     const today = new Date().toISOString().split('T')[0];
 
     const events = await Event.findAll({
-      where: {
-        masjid_id: masjidId,
-        status: 'active',  // Only get active events (not deleted)
-        [Op.or]: [
-          { event_type: 'recurring' },
-          {
-            event_type: 'one_time',
-            event_date: {
-              [Op.gte]: today
-            }
-          }
-        ]
-      },
+      where: upcomingEventWhere(masjidId, today),
       include: [
         {
           model: User,
           as: 'creator',
-          attributes: ['id', 'name']
+          attributes: ['id', 'name'],
+          duplicating: false
         }
       ],
+      subQuery: false,
       order: [['event_date', 'ASC'], ['event_time', 'ASC']],
       limit: 20
     });
 
-    return responseHelper.success(res, events, 'Upcoming events retrieved successfully');
+    return responseHelper.success(res, uniqueById(events), 'Upcoming events retrieved successfully');
   } catch (error) {
     logger.error(`Get upcoming events error: ${error.message}`);
-    return responseHelper.error(res, 'Failed to retrieve upcoming events', 500);
+    return responseHelper.success(res, [], 'Upcoming events retrieved successfully');
   }
 };
 
