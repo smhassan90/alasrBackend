@@ -46,7 +46,36 @@ module.exports = (sequelize) => {
     },
     event_time: {
       type: DataTypes.TIME,
+      allowNull: true
+    },
+    time_mode: {
+      type: DataTypes.ENUM('fixed', 'after_prayer'),
+      defaultValue: 'fixed',
       allowNull: false
+    },
+    after_prayer: {
+      type: DataTypes.STRING(20),
+      allowNull: true,
+      validate: {
+        isValidPrayer(value) {
+          if (value == null || value === '') {
+            return;
+          }
+          const allowed = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha', 'Jummah'];
+          if (!allowed.includes(value)) {
+            throw new Error('Invalid after_prayer value');
+          }
+        }
+      }
+    },
+    minutes_after: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      defaultValue: 15,
+      validate: {
+        min: 0,
+        max: 180
+      }
     },
     location: {
       type: DataTypes.TEXT,

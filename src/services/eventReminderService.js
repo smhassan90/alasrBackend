@@ -3,6 +3,12 @@ const { Event, Masjid, MasjidSubscription, User, UserSettings, DeviceSettings, s
 const logger = require('../utils/logger');
 const pushNotificationService = require('../utils/pushNotificationService');
 const { ensureEventLastNotifiedColumn } = require('../utils/ensureEventLastNotifiedColumn');
+const {
+  ensureEventScheduleColumns,
+  loadPrayerTimeMap,
+  resolveEventClock,
+  timeToMinutes,
+} = require('../utils/eventScheduleService');
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const TIMEZONE = 'Asia/Karachi';
@@ -34,20 +40,6 @@ function karachiNow() {
   };
 }
 
-function timeToMinutes(time) {
-  if (!time) {
-    return null;
-  }
-  if (time instanceof Date && !Number.isNaN(time.getTime())) {
-    return time.getUTCHours() * 60 + time.getUTCMinutes();
-  }
-  const match = String(time).match(/^(\d{1,2}):(\d{2})/);
-  if (!match) {
-    return null;
-  }
-  return parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
-}
-
 function formatClock(time) {
   const minutes = timeToMinutes(time);
   if (minutes == null) {
@@ -68,7 +60,7 @@ function isInReminderWindow(eventMinutes, nowMinutes) {
   return minutesUntil >= MINUTES_BEFORE - WINDOW_MINUTES && minutesUntil <= MINUTES_BEFORE + WINDOW_MINUTES;
 }
 
-async function sendEventReminders(masjid, event) {
+async function sendEventReminders(masjid, event, resolvedClock) {
   const subscriptions = await MasjidSubscription.findAll({
     where: {
       masjid_id: masjid.id,
@@ -128,7 +120,7 @@ async function sendEventReminders(masjid, event) {
     return 0;
   }
 
-  const clock = formatClock(event.event_time);
+  const clock = formatClock(resolvedClock);
   const when =
     event.event_type === 'recurring'
       ? `every ${DAY_NAMES[event.day_of_week] || 'week'} at ${clock}`
@@ -150,8 +142,10 @@ async function sendEventReminders(masjid, event) {
 
 async function notifyUpcomingEvents() {
   await ensureEventLastNotifiedColumn(sequelize);
+  await ensureEventScheduleColumns(sequelize);
   const now = karachiNow();
   const summary = { checked: 0, notified: 0, skipped: 0, errors: [] };
+  const prayerMapCache = new Map();
 
   const events = await Event.findAll({
     where: {
@@ -175,13 +169,27 @@ async function notifyUpcomingEvents() {
     summary.checked += 1;
     const alreadySent =
       event.last_notified_on && String(event.last_notified_on).slice(0, 10) === now.date;
-    if (alreadySent || !isInReminderWindow(timeToMinutes(event.event_time), now.minutes)) {
+    if (alreadySent) {
+      summary.skipped += 1;
+      continue;
+    }
+
+    let prayerMap = {};
+    if ((event.time_mode || 'fixed') === 'after_prayer') {
+      if (!prayerMapCache.has(event.masjid_id)) {
+        prayerMapCache.set(event.masjid_id, await loadPrayerTimeMap(event.masjid_id, now.date));
+      }
+      prayerMap = prayerMapCache.get(event.masjid_id) || {};
+    }
+
+    const resolvedClock = resolveEventClock(event, prayerMap);
+    if (!resolvedClock || !isInReminderWindow(timeToMinutes(resolvedClock), now.minutes)) {
       summary.skipped += 1;
       continue;
     }
 
     try {
-      const sent = await sendEventReminders(event.masjid, event);
+      const sent = await sendEventReminders(event.masjid, event, resolvedClock);
       event.last_notified_on = now.date;
       await event.save();
       summary.notified += 1;

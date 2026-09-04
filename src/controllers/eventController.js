@@ -1,9 +1,48 @@
-const { Event, Masjid, User } = require('../models');
+const { Event, Masjid, User, sequelize } = require('../models');
 const responseHelper = require('../utils/responseHelper');
 const logger = require('../utils/logger');
 const { Op } = require('sequelize');
 const activityLogService = require('../services/activityLogService');
 const { uniqueById, upcomingEventWhere } = require('../utils/uniqueById');
+const {
+  ensureEventScheduleColumns,
+  enrichEventsForMasjid,
+  enrichEvent,
+  loadPrayerTimeMap,
+  normalizePrayerName,
+} = require('../utils/eventScheduleService');
+
+function todayIso() {
+  return new Date().toISOString().split('T')[0];
+}
+
+function normalizeScheduleFields(body = {}) {
+  const timeMode = body.timeMode || body.time_mode || 'fixed';
+  const afterPrayer = normalizePrayerName(body.afterPrayer || body.after_prayer);
+  const minutesRaw = body.minutesAfter ?? body.minutes_after;
+  const minutesAfter =
+    timeMode === 'after_prayer'
+      ? minutesRaw === undefined || minutesRaw === null || minutesRaw === ''
+        ? 0
+        : Math.max(0, Math.min(180, parseInt(minutesRaw, 10) || 0))
+      : null;
+
+  if (timeMode === 'after_prayer') {
+    return {
+      time_mode: 'after_prayer',
+      after_prayer: afterPrayer,
+      minutes_after: minutesAfter,
+      event_time: body.eventTime || body.event_time || '00:00',
+    };
+  }
+
+  return {
+    time_mode: 'fixed',
+    after_prayer: null,
+    minutes_after: null,
+    event_time: body.eventTime || body.event_time,
+  };
+}
 
 /**
  * Get all events for a masjid
@@ -11,6 +50,7 @@ const { uniqueById, upcomingEventWhere } = require('../utils/uniqueById');
  */
 exports.getEventsByMasjid = async (req, res) => {
   try {
+    await ensureEventScheduleColumns(sequelize);
     const { masjidId } = req.params;
     const { page = 1, limit = 10, search } = req.query;
     const offset = (page - 1) * limit;
@@ -43,7 +83,9 @@ exports.getEventsByMasjid = async (req, res) => {
       order: [['event_date', 'DESC'], ['event_time', 'DESC']]
     });
 
-    return responseHelper.paginated(res, uniqueById(events), {
+    const enriched = await enrichEventsForMasjid(uniqueById(events), masjidId, todayIso());
+
+    return responseHelper.paginated(res, enriched, {
       page: parseInt(page),
       limit: parseInt(limit),
       totalItems: count
@@ -98,7 +140,16 @@ exports.getEventById = async (req, res) => {
  */
 exports.createEvent = async (req, res) => {
   try {
-    const { masjidId, name, description, eventType, dayOfWeek, eventDate, eventTime, location } = req.body;
+    await ensureEventScheduleColumns(sequelize);
+    const { masjidId, name, description, eventType, dayOfWeek, eventDate, location } = req.body;
+    const schedule = normalizeScheduleFields(req.body);
+
+    if (schedule.time_mode === 'after_prayer' && !schedule.after_prayer) {
+      return responseHelper.error(res, 'Prayer name is required for after-prayer events', 400);
+    }
+    if (schedule.time_mode === 'fixed' && !schedule.event_time) {
+      return responseHelper.error(res, 'Event time is required', 400);
+    }
 
     const masjid = await Masjid.findByPk(masjidId);
     if (!masjid) {
@@ -112,7 +163,10 @@ exports.createEvent = async (req, res) => {
       event_type: eventType || 'one_time',
       day_of_week: dayOfWeek !== undefined ? dayOfWeek : null,
       event_date: eventType === 'recurring' ? null : eventDate,
-      event_time: eventTime,
+      event_time: schedule.event_time,
+      time_mode: schedule.time_mode,
+      after_prayer: schedule.after_prayer,
+      minutes_after: schedule.minutes_after,
       location,
       created_by: req.userId
     });
@@ -137,7 +191,13 @@ exports.createEvent = async (req, res) => {
       eventName: name
     });
 
-    return responseHelper.success(res, eventWithCreator, 'Event created successfully', 201);
+    const prayerMap = await loadPrayerTimeMap(masjidId, todayIso());
+    return responseHelper.success(
+      res,
+      enrichEvent(eventWithCreator, prayerMap),
+      'Event created successfully',
+      201,
+    );
   } catch (error) {
     logger.error(`Create event error: ${error.message}`);
     return responseHelper.error(res, 'Failed to create event', 500);
@@ -150,8 +210,9 @@ exports.createEvent = async (req, res) => {
  */
 exports.updateEvent = async (req, res) => {
   try {
+    await ensureEventScheduleColumns(sequelize);
     const { id } = req.params;
-    const { name, description, eventType, dayOfWeek, eventDate, eventTime, location } = req.body;
+    const { name, description, eventType, dayOfWeek, eventDate, location } = req.body;
 
     const event = await Event.findByPk(id);
     if (!event) {
@@ -172,8 +233,30 @@ exports.updateEvent = async (req, res) => {
     } else if (eventDate) {
       event.event_date = eventDate;
     }
-    if (eventTime) event.event_time = eventTime;
     if (location !== undefined) event.location = location;
+
+    if (
+      req.body.timeMode !== undefined ||
+      req.body.time_mode !== undefined ||
+      req.body.afterPrayer !== undefined ||
+      req.body.after_prayer !== undefined ||
+      req.body.minutesAfter !== undefined ||
+      req.body.minutes_after !== undefined ||
+      req.body.eventTime !== undefined
+    ) {
+      const schedule = normalizeScheduleFields({
+        timeMode: req.body.timeMode || req.body.time_mode || event.time_mode || 'fixed',
+        afterPrayer: req.body.afterPrayer ?? req.body.after_prayer ?? event.after_prayer,
+        minutesAfter: req.body.minutesAfter ?? req.body.minutes_after ?? event.minutes_after,
+        eventTime: req.body.eventTime ?? req.body.event_time ?? event.event_time,
+      });
+      event.time_mode = schedule.time_mode;
+      event.after_prayer = schedule.after_prayer;
+      event.minutes_after = schedule.minutes_after;
+      if (schedule.event_time) {
+        event.event_time = schedule.event_time;
+      }
+    }
 
     await event.save();
 
@@ -190,7 +273,12 @@ exports.updateEvent = async (req, res) => {
 
     logger.info(`Event ${id} updated by ${req.userId}`);
 
-    return responseHelper.success(res, eventWithCreator, 'Event updated successfully');
+    const prayerMap = await loadPrayerTimeMap(event.masjid_id, todayIso());
+    return responseHelper.success(
+      res,
+      enrichEvent(eventWithCreator, prayerMap),
+      'Event updated successfully',
+    );
   } catch (error) {
     logger.error(`Update event error: ${error.message}`);
     return responseHelper.error(res, 'Failed to update event', 500);
@@ -234,8 +322,9 @@ exports.deleteEvent = async (req, res) => {
  */
 exports.getUpcomingEvents = async (req, res) => {
   try {
+    await ensureEventScheduleColumns(sequelize);
     const { masjidId } = req.params;
-    const today = new Date().toISOString().split('T')[0];
+    const today = todayIso();
 
     const events = await Event.findAll({
       where: upcomingEventWhere(masjidId, today),
@@ -252,7 +341,8 @@ exports.getUpcomingEvents = async (req, res) => {
       limit: 20
     });
 
-    return responseHelper.success(res, uniqueById(events), 'Upcoming events retrieved successfully');
+    const enriched = await enrichEventsForMasjid(uniqueById(events), masjidId, today);
+    return responseHelper.success(res, enriched, 'Upcoming events retrieved successfully');
   } catch (error) {
     logger.error(`Get upcoming events error: ${error.message}`);
     return responseHelper.success(res, [], 'Upcoming events retrieved successfully');

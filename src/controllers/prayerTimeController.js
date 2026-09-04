@@ -7,6 +7,7 @@ const { ensureAsrFiqhColumn } = require('../utils/ensureAsrFiqhColumn');
 const activityLogService = require('../services/activityLogService');
 const { Op } = require('sequelize');
 const { uniqueById, upcomingEventWhere } = require('../utils/uniqueById');
+const { enrichEventsForMasjid, ensureEventScheduleColumns } = require('../utils/eventScheduleService');
 
 const PRAYER_ORDER = "FIELD(prayer_name, 'Fajr', 'Dhuhr', 'Jummah', 'Asr', 'Maghrib', 'Isha')";
 
@@ -200,6 +201,7 @@ exports.getHomeSummary = async (req, res) => {
       ? maghribScheduleService.getTodayForCity(masjid.city)
       : new Date().toISOString().split('T')[0];
 
+    await ensureEventScheduleColumns(sequelize);
     const [latestPrayerTimes, events] = await Promise.all([
       findLatestPrayerTimes(masjidId, today),
       Event.findAll({
@@ -214,11 +216,13 @@ exports.getHomeSummary = async (req, res) => {
       prayerTimes = maghribScheduleService.applyScheduledMaghribToPrayerTimes(masjid, prayerTimes, today);
     }
 
+    const enrichedEvents = await enrichEventsForMasjid(events, masjidId, today);
+
     res.set('Cache-Control', 'public, max-age=120');
     return responseHelper.success(res, {
       masjid,
       prayerTimes,
-      events
+      events: enrichedEvents
     }, 'Home summary retrieved successfully');
   } catch (error) {
     logger.error(`Get home summary error: ${error.message}`, { error: error.stack, masjidId: req.params?.masjidId });
