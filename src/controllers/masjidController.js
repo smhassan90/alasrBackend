@@ -1,4 +1,4 @@
-const { Masjid, UserMasjid, User, Question, Event, MasjidSubscription, UserSettings, sequelize } = require('../models');
+const { Masjid, UserMasjid, User, Question, Event, MasjidSubscription, UserSettings, UserFavorite, sequelize } = require('../models');
 const responseHelper = require('../utils/responseHelper');
 const logger = require('../utils/logger');
 const { Op } = require('sequelize');
@@ -112,9 +112,24 @@ exports.getAllMasajids = async (req, res) => {
     ]);
 
     const { count, rows: masajids } = listResult;
+    const masjidIds = masajids.map(masjid => masjid.id);
+    const favoriteCounts = masjidIds.length
+      ? await UserFavorite.findAll({
+          attributes: [
+            'masjid_id',
+            [sequelize.fn('COUNT', sequelize.col('id')), 'home_users_count']
+          ],
+          where: { masjid_id: { [Op.in]: masjidIds } },
+          group: ['masjid_id'],
+          raw: true
+        })
+      : [];
+    const homeUsersByMasjid = {};
+    favoriteCounts.forEach(row => {
+      homeUsersByMasjid[row.masjid_id] = parseInt(row.home_users_count, 10) || 0;
+    });
 
     masajids
-      .filter(masjid => masjid.latitude == null || masjid.longitude == null)
       .slice(0, 3)
       .forEach(masjid => {
         persistMasjidCoordinates(masjid).catch(err => {
@@ -133,6 +148,7 @@ exports.getAllMasajids = async (req, res) => {
       
       // Always include isSubscribed field (defaults to false if no subscriptions)
       masjidData.isSubscribed = hasSubscription;
+      masjidData.home_users_count = homeUsersByMasjid[masjid.id] || 0;
       
       return masjidData;
     });
@@ -449,18 +465,20 @@ exports.getMasjidStatistics = async (req, res) => {
     }
 
     // Get counts
-    const [questionsCount, eventsCount, membersCount, newQuestionsCount] = await Promise.all([
+    const [questionsCount, eventsCount, membersCount, newQuestionsCount, homeUsersCount] = await Promise.all([
       Question.count({ where: { masjid_id: id } }),
       Event.count({ where: { masjid_id: id } }),
       UserMasjid.count({ where: { masjid_id: id } }),
-      Question.count({ where: { masjid_id: id, status: 'new' } })
+      Question.count({ where: { masjid_id: id, status: 'new' } }),
+      UserFavorite.count({ where: { masjid_id: id } })
     ]);
 
     const statistics = {
       totalQuestions: questionsCount,
       newQuestions: newQuestionsCount,
       totalEvents: eventsCount,
-      totalMembers: membersCount
+      totalMembers: membersCount,
+      homeUsersCount
     };
 
     return responseHelper.success(res, statistics, 'Statistics retrieved successfully');

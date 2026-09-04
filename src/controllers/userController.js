@@ -284,12 +284,19 @@ exports.getUserMasajids = async (req, res) => {
         };
       }
       masajidsMap[masjidId].roles.push(um.role);
-      if (um.is_default) {
+      if (um.is_default === true || um.is_default === 1) {
         masajidsMap[masjidId].isDefault = true;
       }
     });
 
     const masajids = Object.values(masajidsMap);
+    const defaultMasajids = masajids.filter(m => m.isDefault);
+    if (defaultMasajids.length > 1) {
+      const keepId = defaultMasajids[0].masjidId;
+      masajids.forEach(m => {
+        m.isDefault = m.masjidId === keepId;
+      });
+    }
 
     return responseHelper.success(res, masajids, 'Masajids retrieved successfully');
   } catch (error) {
