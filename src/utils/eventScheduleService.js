@@ -114,18 +114,23 @@ function resolveEventClock(event, prayerMap = {}) {
 
 function enrichEvent(event, prayerMap = {}) {
   const data = typeof event?.toJSON === 'function' ? event.toJSON() : { ...event };
+  data.time_mode = data.time_mode || 'fixed';
+  data.after_prayer = normalizePrayerName(data.after_prayer) || data.after_prayer || null;
+
   const resolved = resolveEventClock(data, prayerMap);
   data.resolved_event_time = resolved;
-  if (resolved) {
-    data.event_time = resolved;
-  }
-  data.time_mode = data.time_mode || 'fixed';
+
   if (data.time_mode === 'after_prayer') {
+    // Never expose the 00:00 placeholder used for DB storage.
+    data.event_time = resolved;
     data.minutes_after =
       data.minutes_after === null || data.minutes_after === undefined
         ? 0
         : parseInt(data.minutes_after, 10);
+  } else if (resolved) {
+    data.event_time = resolved;
   }
+
   return data;
 }
 
