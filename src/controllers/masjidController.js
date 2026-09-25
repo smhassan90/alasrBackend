@@ -9,6 +9,12 @@ const { ensureMasjidCoordinates } = require('../utils/ensureMasjidCoordinates');
 const { persistMasjidCoordinates } = require('../utils/geocodeMasjid');
 const { upsertArea } = require('../utils/upsertArea');
 const { logMasjidCreated, logMasjidUpdated, logMasjidDeactivated } = require('../services/activityLogService');
+const {
+  parseLatLng,
+  parseCoord,
+  attachDistanceKm,
+  sortByDistanceKm
+} = require('../utils/geoDistance');
 
 function actorName(req) {
   return req.user?.name || 'A user';
@@ -137,21 +143,21 @@ exports.getAllMasajids = async (req, res) => {
         });
       });
 
-    // Add subscription status to each masjid
+    const origin = parseLatLng(req.query.lat, req.query.lng);
+
     const masajidsWithSubscription = masajids.map(masjid => {
       const masjidData = masjid.toJSON();
-      
-      // Check if user/device has any active subscription for this masjid
       const hasSubscription = userSubscriptions.some(
         sub => sub.masjid_id === masjid.id
       );
-      
-      // Always include isSubscribed field (defaults to false if no subscriptions)
       masjidData.isSubscribed = hasSubscription;
       masjidData.home_users_count = homeUsersByMasjid[masjid.id] || 0;
-      
-      return masjidData;
+      return origin ? attachDistanceKm(masjidData, origin) : masjidData;
     });
+
+    if (origin) {
+      masajidsWithSubscription.sort(sortByDistanceKm);
+    }
 
     const logMessage = req.userId 
       ? `Masajids retrieved for user ${req.userId} (Super Admin: ${req.user?.is_super_admin || false}): ${count} total`
@@ -167,6 +173,113 @@ exports.getAllMasajids = async (req, res) => {
   } catch (error) {
     logger.error(`Get all masajids error: ${error.message}`);
     return responseHelper.error(res, 'Failed to retrieve masajids', 500);
+  }
+};
+
+const MASJID_LIST_ATTRIBUTES = [
+  'id', 'name', 'location', 'address', 'area', 'city', 'state', 'country',
+  'postal_code', 'contact_email', 'contact_phone', 'is_active',
+  'ask_imam_enabled', 'asr_fiqh', 'latitude', 'longitude', 'created_at', 'updated_at'
+];
+
+/**
+ * Get nearby masajids sorted by stored coordinates.
+ * @route GET /api/masajids/nearby?lat=&lng=&radiusKm=&limit=
+ */
+exports.getNearbyMasajids = async (req, res) => {
+  try {
+    await ensureAsrFiqhColumn(sequelize);
+    await ensureAreaColumn(sequelize);
+    await ensureMasjidCoordinates(sequelize);
+
+    const origin = parseLatLng(req.query.lat, req.query.lng);
+    if (!origin) {
+      return responseHelper.validationError(res, [
+        { field: 'lat', message: 'lat and lng are required' }
+      ]);
+    }
+
+    const radiusKmRaw = parseCoord(req.query.radiusKm);
+    const radiusKm = radiusKmRaw === null ? 500 : Math.min(Math.max(radiusKmRaw, 1), 2000);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 100);
+    const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+
+    const whereClause = { is_active: true };
+    if (search) {
+      whereClause[Op.or] = [
+        { name: { [Op.like]: `%${search}%` } },
+        { city: { [Op.like]: `%${search}%` } },
+        { area: { [Op.like]: `%${search}%` } },
+        { location: { [Op.like]: `%${search}%` } }
+      ];
+    }
+
+    const { deviceId } = req.query;
+    let subscriptionWhere = null;
+    if (req.userId) {
+      subscriptionWhere = { user_id: req.userId, is_active: true };
+    } else if (deviceId) {
+      subscriptionWhere = {
+        device_id: deviceId,
+        user_id: { [Op.is]: null },
+        is_active: true
+      };
+    }
+
+    const [masajids, userSubscriptions] = await Promise.all([
+      Masjid.findAll({
+        where: whereClause,
+        attributes: MASJID_LIST_ATTRIBUTES
+      }),
+      subscriptionWhere
+        ? MasjidSubscription.findAll({
+            where: subscriptionWhere,
+            attributes: ['masjid_id']
+          })
+        : Promise.resolve([])
+    ]);
+
+    const subscribedIds = new Set(userSubscriptions.map(sub => sub.masjid_id));
+    const decorated = masajids.map(masjid => {
+      const masjidData = masjid.toJSON();
+      masjidData.isSubscribed = subscribedIds.has(masjid.id);
+      return attachDistanceKm(masjidData, origin);
+    });
+    const withCoords = decorated
+      .filter(masjid => Number.isFinite(masjid.distanceKm) && masjid.distanceKm <= radiusKm)
+      .sort(sortByDistanceKm);
+    const withoutCoords = decorated.filter(masjid => !Number.isFinite(masjid.distanceKm));
+    const withDistance = withCoords.concat(withoutCoords).slice(0, limit);
+
+    const masjidIds = withDistance.map(masjid => masjid.id);
+    const favoriteCounts = masjidIds.length
+      ? await UserFavorite.findAll({
+          attributes: [
+            'masjid_id',
+            [sequelize.fn('COUNT', sequelize.col('id')), 'home_users_count']
+          ],
+          where: { masjid_id: { [Op.in]: masjidIds } },
+          group: ['masjid_id'],
+          raw: true
+        })
+      : [];
+    const homeUsersByMasjid = {};
+    favoriteCounts.forEach(row => {
+      homeUsersByMasjid[row.masjid_id] = parseInt(row.home_users_count, 10) || 0;
+    });
+    withDistance.forEach(masjid => {
+      masjid.home_users_count = homeUsersByMasjid[masjid.id] || 0;
+    });
+
+    res.set('Cache-Control', 'public, max-age=60');
+    return responseHelper.paginated(res, withDistance, {
+      page: 1,
+      limit,
+      totalItems: withDistance.length
+    }, 'Nearby masajids retrieved successfully');
+  } catch (error) {
+    logger.error(`Get nearby masajids error: ${error.message}`);
+    return responseHelper.error(res, 'Failed to retrieve nearby masajids', 500);
   }
 };
 
@@ -229,8 +342,12 @@ exports.createMasjid = async (req, res) => {
       contact_email,
       contact_phone,
       ask_imam_enabled,
-      asr_fiqh
+      asr_fiqh,
+      latitude,
+      longitude
     } = req.body;
+
+    const coords = parseLatLng(latitude, longitude);
 
     // Create masjid
     const masjid = await Masjid.create({
@@ -246,6 +363,8 @@ exports.createMasjid = async (req, res) => {
       contact_phone,
       ask_imam_enabled: ask_imam_enabled !== undefined ? ask_imam_enabled : true,
       asr_fiqh: asr_fiqh === 'shafai' ? 'shafai' : 'hanafi',
+      latitude: coords ? coords.lat : null,
+      longitude: coords ? coords.lng : null,
       created_by: req.userId
     }, { transaction });
 
@@ -275,9 +394,10 @@ exports.createMasjid = async (req, res) => {
 
     await transaction.commit();
 
-    persistMasjidCoordinates(masjid).catch(err => {
-      logger.warn(`Background geocode failed for masjid ${masjid.id}: ${err.message}`);
-    });
+    if (!coords) {
+      await persistMasjidCoordinates(masjid);
+    }
+    await masjid.reload();
 
     logger.info(`Masjid created: ${masjid.name} by user: ${req.userId}`);
     await logMasjidCreated({
@@ -318,7 +438,9 @@ exports.updateMasjid = async (req, res) => {
       contact_phone,
       is_active,
       ask_imam_enabled,
-      asr_fiqh
+      asr_fiqh,
+      latitude,
+      longitude
     } = req.body;
 
     const masjid = await Masjid.findByPk(id);
@@ -341,7 +463,27 @@ exports.updateMasjid = async (req, res) => {
     if (ask_imam_enabled !== undefined) masjid.ask_imam_enabled = ask_imam_enabled;
     if (asr_fiqh !== undefined) masjid.asr_fiqh = asr_fiqh === 'shafai' ? 'shafai' : 'hanafi';
 
+    const incomingCoords = parseLatLng(latitude, longitude);
+    if (incomingCoords) {
+      masjid.latitude = incomingCoords.lat;
+      masjid.longitude = incomingCoords.lng;
+    }
+
+    const addressChanged =
+      location !== undefined ||
+      address !== undefined ||
+      area !== undefined ||
+      city !== undefined ||
+      state !== undefined ||
+      country !== undefined ||
+      postal_code !== undefined;
+
     await masjid.save();
+
+    if (!incomingCoords && (addressChanged || parseCoord(masjid.latitude) === null)) {
+      await persistMasjidCoordinates(masjid);
+      await masjid.reload();
+    }
 
     await upsertArea({
       name: masjid.area,

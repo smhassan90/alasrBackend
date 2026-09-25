@@ -57,7 +57,15 @@ exports.createMasjidValidator = [
 
   body('asr_fiqh')
     .optional()
-    .isIn(['hanafi', 'shafai']).withMessage('asr_fiqh must be hanafi or shafai')
+    .isIn(['hanafi', 'shafai']).withMessage('asr_fiqh must be hanafi or shafai'),
+
+  body('latitude')
+    .optional({ nullable: true })
+    .isFloat({ min: -90, max: 90 }).withMessage('latitude must be between -90 and 90'),
+
+  body('longitude')
+    .optional({ nullable: true })
+    .isFloat({ min: -180, max: 180 }).withMessage('longitude must be between -180 and 180')
 ];
 
 exports.updateMasjidValidator = [
@@ -126,7 +134,15 @@ exports.updateMasjidValidator = [
 
   body('asr_fiqh')
     .optional()
-    .isIn(['hanafi', 'shafai']).withMessage('asr_fiqh must be hanafi or shafai')
+    .isIn(['hanafi', 'shafai']).withMessage('asr_fiqh must be hanafi or shafai'),
+
+  body('latitude')
+    .optional({ nullable: true })
+    .isFloat({ min: -90, max: 90 }).withMessage('latitude must be between -90 and 90'),
+
+  body('longitude')
+    .optional({ nullable: true })
+    .isFloat({ min: -180, max: 180 }).withMessage('longitude must be between -180 and 180')
 ];
 
 exports.masjidIdValidator = [

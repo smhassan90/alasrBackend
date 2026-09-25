@@ -67,6 +67,7 @@ const isHotPublicGet = (req) => {
     p.endsWith('/today') ||
     p.includes('/config/app') ||
     p.endsWith('/users/favorites') ||
+    p.includes('/masajids/nearby') ||
     /\/masajids\/?$/.test(p)
   );
 };

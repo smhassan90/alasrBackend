@@ -9,6 +9,7 @@ const { isMasjidMember, canManageMasjid } = require('../middleware/masjidAuth');
 
 // Get all masajids (accepts either API key or JWT token)
 router.get('/', optionalApiKeyOrAuth, optionalAuth, masjidController.getAllMasajids);
+router.get('/nearby', optionalApiKeyOrAuth, optionalAuth, masjidController.getNearbyMasajids);
 
 // All other masjid routes require authentication
 router.use(authenticate);
