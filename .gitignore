@@ -49,4 +49,12 @@ test-results/
 # Temp
 tmp/
 temp/
+build-temp/
+**/build-temp/
+hs_err_pid*.log
+replay_pid*.log
+_portal-push-tmp/
+_rn-scaffold-*/
+*-ios-backup/
+release-apks/
 
